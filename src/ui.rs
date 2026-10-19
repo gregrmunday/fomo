@@ -351,9 +351,8 @@ impl Delegate {
             state.forecast = Some(bundle);
         }
         state.loading = false;
-        if let Err(error) = state.snapshot.save(state.config.spot) {
-            state.save_error = Some(error);
-        }
+        // A successful write shows storage has recovered, so clear any earlier failure.
+        state.save_error = state.snapshot.save(state.config.spot).err();
         drop(state);
         self.render();
     }
