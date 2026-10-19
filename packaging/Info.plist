@@ -6,13 +6,13 @@
     <key>CFBundleDisplayName</key><string>Fomo</string>
     <key>CFBundleName</key><string>Fomo</string>
     <key>CFBundleExecutable</key><string>fomo</string>
-    <key>CFBundleIdentifier</key><string>uk.personal.fomo</string>
+    <key>CFBundleIdentifier</key><string>io.github.gregrmunday.fomo</string>
     <key>CFBundlePackageType</key><string>APPL</string>
-    <key>CFBundleShortVersionString</key><string>0.1.0</string>
-    <key>CFBundleVersion</key><string>1</string>
+    <key>CFBundleShortVersionString</key><string>0.2.0</string>
+    <key>CFBundleVersion</key><string>2</string>
     <key>LSMinimumSystemVersion</key><string>12.0</string>
     <key>LSUIElement</key><true/>
     <key>NSHighResolutionCapable</key><true/>
-    <key>NSHumanReadableCopyright</key><string>Fomo contributors. Data: Regional Coastal Monitoring Programme, Open Government Licence.</string>
+    <key>NSHumanReadableCopyright</key><string>Fomo contributors. Observations: Regional Coastal Monitoring Programme, Open Government Licence. Forecast inputs: ECMWF and NOAA NCEP via Open-Meteo (CC BY 4.0).</string>
 </dict>
 </plist>

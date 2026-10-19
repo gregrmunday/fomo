@@ -6,6 +6,10 @@ mod model;
 mod ui;
 
 fn main() {
+    if std::env::args().any(|a| a == "--version") {
+        println!("fomo {}", env!("CARGO_PKG_VERSION"));
+        return;
+    }
     if std::env::args().any(|a| a == "--refresh-forecast") {
         let how = if forecast::runs_locally() {
             "generated on this Mac's GPU"
@@ -45,4 +49,17 @@ fn main() {
     ui::run();
     #[cfg(not(target_os = "macos"))]
     eprintln!("Fomo is a macOS menu bar app. Build and run it on a Mac.");
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn bundle_version_matches_the_crate() {
+        let plist = include_str!("../packaging/Info.plist");
+        let short = format!(
+            "<key>CFBundleShortVersionString</key><string>{}</string>",
+            env!("CARGO_PKG_VERSION")
+        );
+        assert!(plist.contains(&short), "update packaging/Info.plist");
+    }
 }

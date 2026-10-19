@@ -1,6 +1,6 @@
 [package]
 name = "fomo"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 description = "Cornwall's buoys, at a glance. A native Rust macOS menu bar app."
 license = "MIT"

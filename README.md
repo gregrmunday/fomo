@@ -11,7 +11,24 @@ Click the readings to open the conditions panel: significant wave height, peak p
 
 The default menu bar layout stacks each direction above its readings, with a thin vertical divider between waves and wind. Arrows rotate continuously using the original fractional bearings. Hover over the wave history to see time and height, or the 12 hour wind history to see time, speed, gusts and direction. Wave height defaults to feet and wind speed (including gusts) to mph; both can be changed in Settings.
 
-## Run
+## Install
+
+With [Homebrew](https://brew.sh) on macOS 12 or later:
+
+```sh
+brew install gregrmunday/tap/fomo
+brew services start fomo
+```
+
+The first command builds Fomo on your Mac, which takes a few minutes the first time. The second starts it now and at every login, and the wave icon appears in the menu bar. Click it for the conditions panel.
+
+- **Stop it, and stop it starting at login:** `brew services stop fomo`. Quitting from the panel (⌘Q) only lasts until the next login.
+- **Update:** `brew upgrade fomo`, then `brew services restart fomo`.
+- **Uninstall:** `brew services stop fomo && brew uninstall fomo`. Settings and caches stay in `~/Library/Application Support/Fomo/`; delete that folder to remove them too.
+
+Forecasts arrive by themselves. A scheduled job runs the forecast model every few hours and publishes the result, and Fomo downloads it when it's due. Nothing else needs installing.
+
+## Build it yourself
 
 Requires macOS 12 or later, Rust with Cargo, and Apple's Command Line Tools (`xcode-select --install` if missing).
 
@@ -81,7 +98,11 @@ Southwest Regional Coastal Monitoring Programme. Copyright: Teignbridge DC. The 
 
 ## Local learned forecasts
 
-Click **Forecast** in the conditions panel to see seven days of Hs, peak period and peak direction, with uncertainty ranges. **Refresh forecast** (or Command-R in that view) fetches recent observations and the latest usable operational wave/wind runs, then performs neural mixture inference on the Mac's MPS GPU in a background process. The button is disabled while a refresh is running. Forecast refresh is independent of the observations timer; it does not retrain the model.
+Click **Forecast** in the conditions panel to see seven days of Hs, peak period and peak direction, with uncertainty ranges.
+
+Most Macs download the published forecast from `https://raw.githubusercontent.com/gregrmunday/fomo/forecast/fomo-v2.json`, which a scheduled job in a private repository regenerates every few hours. Fomo validates each download before replacing its saved copy in `~/Library/Application Support/Fomo/forecast.json`, and fetches a new one once the current forecast's refresh time has passed. `FOMO_FORECAST_URL` overrides the address.
+
+On a Mac that has the forecast worker (below), the forecast is generated locally instead. There, **Refresh forecast** (or Command-R in that view) fetches recent observations and the latest usable operational wave/wind runs, then performs neural mixture inference on the Mac's MPS GPU in a background process. The button is disabled while a refresh is running. Forecast refresh is independent of the observations timer; it does not retrain the model.
 
 The personal worker lives at `~/Documents/BuoyData/deepwater-models`; `FOMO_FORECAST_PROJECT` can override that directory and `FOMO_FORECAST_FILE` can override the JSON path. The worker uses the existing `torch` environment, overridable with `DEEPWATER_PYTHON`. It writes validated `forecasts/fomo-v2.json` atomically. Wave models are ECMWF WAM and NOAA GFS Wave; operational ECMWF IFS winds condition the neural corrections. Inputs use each model's latest usable initialization under the configured eight-hour availability assumption, aligned by forecast valid time. A new run is not necessarily published between refresh clicks, but GPU inference and recent buoy retrieval run again.
 
