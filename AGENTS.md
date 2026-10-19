@@ -150,6 +150,10 @@ Review findings from 2026-10-19, worked through in order. Status is `todo`, `in 
 - [x] **#17 Docs.** README lists DWD EWAM, which neither the app nor the worker uses. "M3 GPU" is hard-coded in the forecast status text. `--render-swell-preview` is undocumented. Status: done
 - [x] **#18 Sea temperature.** `Wave.temperature` is parsed, QC-filtered and cached but never shown. Add it to the waves card. Status: done
 
+### After release
+
+- [x] **#19 Menu bar redraw loop.** The readings were live subviews of the status item's button. On macOS 27 AppKit re-snapshots those for every menu bar copy, and each snapshot's appearance change marks them dirty again, so Fomo used about 65% of a core (plus WindowServer) indefinitely. Draw the readings into one template image instead. Status: done
+
 ### Checked and fine
 
 Forecast file on disk passes validation. The worker script `exec`s Python, so the timeout kill reaches it. Settings and cache writes are atomic. Unit conversion constants are correct.

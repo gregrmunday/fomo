@@ -34,10 +34,6 @@ define_class!(
     pub(super) struct StatusReadings;
     unsafe impl NSObjectProtocol for StatusReadings {}
     impl StatusReadings {
-        // Let the status bar button handle clicks, highlights and its tooltip.
-        #[unsafe(method(hitTest:))]
-        fn hit_test(&self, _point: NSPoint) -> *mut NSView { std::ptr::null_mut() }
-
         #[unsafe(method(drawRect:))]
         fn draw(&self, _dirty: NSRect) {
             if let Some(x) = self.ivars().get() {
@@ -134,6 +130,44 @@ impl StatusReadings {
         view.setFrameSize(NSSize::new(x + 5.0, height));
         view
     }
+}
+
+// The menu bar shows the readings as one template image. Live subviews inside a status
+// item made AppKit re-snapshot them for every menu bar copy, and each snapshot's
+// appearance change marked them dirty again: a redraw loop that kept a core busy.
+pub(super) fn status_image(
+    mtm: MainThreadMarker,
+    state: &State,
+    height: f64,
+) -> Option<Retained<NSImage>> {
+    let view = StatusReadings::new(mtm, state, height);
+    // Drawn dark on clear; the menu bar tints template images for its own appearance.
+    view.setAppearance(NSAppearance::appearanceNamed(unsafe { NSAppearanceNameAqua }).as_deref());
+    let size = view.frame().size;
+    // Two pixels per point keeps Retina menu bars sharp.
+    let scale = 2.0;
+    // SAFETY: Null planes make AppKit allocate the buffer; the arguments describe 8-bit RGBA.
+    let bitmap = unsafe {
+        NSBitmapImageRep::initWithBitmapDataPlanes_pixelsWide_pixelsHigh_bitsPerSample_samplesPerPixel_hasAlpha_isPlanar_colorSpaceName_bytesPerRow_bitsPerPixel(
+            NSBitmapImageRep::alloc(),
+            std::ptr::null_mut(),
+            (size.width * scale).ceil() as isize,
+            (size.height * scale).ceil() as isize,
+            8,
+            4,
+            true,
+            false,
+            NSDeviceRGBColorSpace,
+            0,
+            0,
+        )
+    }?;
+    bitmap.setSize(size);
+    view.cacheDisplayInRect_toBitmapImageRep(view.bounds(), &bitmap);
+    let image = NSImage::initWithSize(NSImage::alloc(), size);
+    image.addRepresentation(&bitmap);
+    image.setTemplate(true);
+    Some(image)
 }
 
 pub(super) fn direction_row(

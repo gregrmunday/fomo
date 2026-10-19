@@ -117,7 +117,6 @@ struct Ivars {
     timer: RefCell<Option<Retained<NSTimer>>>,
     // The page whose views are currently installed in the popover.
     shown_page: Cell<Option<Page>>,
-    status_readings: RefCell<Option<Retained<StatusReadings>>>,
 }
 
 define_class!(
@@ -279,7 +278,6 @@ impl Delegate {
             controller: OnceCell::new(),
             timer: RefCell::new(None),
             shown_page: Cell::new(None),
-            status_readings: RefCell::new(None),
         });
         // SAFETY: NSObject init has this signature; ivars are initialized above.
         unsafe { msg_send![super(this), init] }
@@ -456,31 +454,28 @@ impl Delegate {
 
     fn update_status(&self) {
         let state = self.ivars().state.borrow();
-        if let Some(button) = self.ivars().status.get().and_then(|s| s.button(self.mtm())) {
+        let Some(status) = self.ivars().status.get() else {
+            return;
+        };
+        if let Some(button) = status.button(self.mtm()) {
             let title = if state.demo {
                 format!("DEMO {}", menu_title(&state.config, &state.snapshot, false))
             } else {
                 menu_title(&state.config, &state.snapshot, state.loading)
             };
-            if let Some(old) = self.ivars().status_readings.borrow_mut().take() {
-                old.removeFromSuperview();
-            }
-            if state.config.compact {
-                self.ivars().status.get().unwrap().setLength(-1.0);
-                button.setImage(wave_icon().as_deref());
-                button.setTitle(&NSString::from_str(&format!(" {title}")));
-            } else {
+            let readings = (!state.config.compact)
+                .then(|| status_image(self.mtm(), &state, button.bounds().size.height.max(22.0)))
+                .flatten();
+            if let Some(image) = readings {
                 button.setTitle(&NSString::from_str(""));
-                button.setImage(None);
-                let view =
-                    StatusReadings::new(self.mtm(), &state, button.bounds().size.height.max(22.0));
-                self.ivars()
-                    .status
-                    .get()
-                    .unwrap()
-                    .setLength(view.frame().size.width);
-                button.addSubview(&view);
-                *self.ivars().status_readings.borrow_mut() = Some(view);
+                status.setLength(image.size().width);
+                button.setImage(Some(&image));
+                button.setImagePosition(NSCellImagePosition::ImageOnly);
+            } else {
+                status.setLength(-1.0);
+                button.setImage(wave_icon().as_deref());
+                button.setImagePosition(NSCellImagePosition::ImageLeft);
+                button.setTitle(&NSString::from_str(&format!(" {title}")));
             }
             button.setAccessibilityLabel(Some(&NSString::from_str(&title)));
             let wave_time = state

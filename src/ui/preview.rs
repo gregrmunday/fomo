@@ -125,9 +125,17 @@ pub(super) fn render_previews(mtm: MainThreadMarker, dir: &str) {
             &appearance,
             &format!("{dir}/forecast-{theme}.png"),
         );
+        // The menu bar tints the template image with its opaque text colour; so does this view.
         for height in [22.0, 24.0, 32.0] {
-            let view = StatusReadings::new(mtm, &state, height);
-            assert!(view.hitTest(NSPoint::new(40.0, 10.0)).is_none());
+            let image = status_image(mtm, &state, height).expect("menu bar image");
+            let view = NSImageView::imageViewWithImage(&image, mtm);
+            let ink = if theme == "light" {
+                NSColor::blackColor()
+            } else {
+                NSColor::whiteColor()
+            };
+            view.setContentTintColor(Some(&ink));
+            view.setFrameSize(image.size());
             write_preview(
                 mtm,
                 &view,
