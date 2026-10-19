@@ -37,6 +37,14 @@ const WIND_STATIONS: [&str; 6] = [
     "Bude",
 ];
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Page {
+    Conditions,
+    Settings,
+    About,
+    Forecast,
+}
+
 thread_local! { static APP: OnceCell<Retained<Delegate>> = const { OnceCell::new() }; }
 
 struct State {
@@ -46,14 +54,12 @@ struct State {
     loading: bool,
     // Wall-clock time of the last completed fetch, for refreshing after sleep.
     last_fetch: Option<chrono::DateTime<chrono::Utc>>,
-    settings: bool,
-    about: bool,
+    page: Page,
     demo: bool,
     save_error: Option<String>,
     forecast: Option<crate::forecast::ForecastBundle>,
     forecast_error: Option<String>,
     forecast_loading: bool,
-    forecast_page: bool,
     forecast_generation: u64,
 }
 
@@ -85,7 +91,8 @@ struct Ivars {
     popover: OnceCell<Retained<NSPopover>>,
     controller: OnceCell<Retained<NSViewController>>,
     timer: RefCell<Option<Retained<NSTimer>>>,
-    current_page: Cell<isize>,
+    // The page whose views are currently installed in the popover.
+    shown_page: Cell<Option<Page>>,
     status_readings: RefCell<Option<Retained<StatusReadings>>>,
 }
 
@@ -147,34 +154,13 @@ define_class!(
         fn refresh_action(&self, _sender: Option<&AnyObject>) { self.refresh(); }
 
         #[unsafe(method(settings:))]
-        fn settings_action(&self, _sender: Option<&AnyObject>) {
-            let mut state = self.ivars().state.borrow_mut();
-            state.forecast_page = false;
-            state.settings = !state.settings;
-            state.about = false;
-            drop(state);
-            self.render();
-        }
+        fn settings_action(&self, _sender: Option<&AnyObject>) { self.toggle_page(Page::Settings); }
 
         #[unsafe(method(about:))]
-        fn about_action(&self, _sender: Option<&AnyObject>) {
-            let mut state = self.ivars().state.borrow_mut();
-            state.forecast_page = false;
-            state.about = !state.about;
-            state.settings = false;
-            drop(state);
-            self.render();
-        }
+        fn about_action(&self, _sender: Option<&AnyObject>) { self.toggle_page(Page::About); }
 
         #[unsafe(method(back:))]
-        fn back_action(&self, _sender: Option<&AnyObject>) {
-            let mut state = self.ivars().state.borrow_mut();
-            state.forecast_page = false;
-            state.settings = false;
-            state.about = false;
-            drop(state);
-            self.render();
-        }
+        fn back_action(&self, _sender: Option<&AnyObject>) { self.show(Page::Conditions); }
 
         #[unsafe(method(changed:))]
         fn changed(&self, sender: &NSPopUpButton) {
@@ -211,7 +197,7 @@ define_class!(
             self.schedule();
             // Keep controls in place while a settings popup is being used.
             self.update_status();
-            if !self.ivars().state.borrow().settings { self.render(); }
+            if self.ivars().state.borrow().page != Page::Settings { self.render(); }
             if refetch { self.refresh(); }
         }
 
@@ -228,13 +214,8 @@ define_class!(
 
         #[unsafe(method(forecast:))]
         fn forecast_action(&self, _sender: Option<&AnyObject>) {
-            let mut state = self.ivars().state.borrow_mut();
-            state.forecast_page = true;
-            state.settings = false;
-            state.about = false;
-            state.reload_forecast();
-            drop(state);
-            self.render();
+            self.ivars().state.borrow_mut().reload_forecast();
+            self.show(Page::Forecast);
         }
 
         #[unsafe(method(refreshForecast:))]
@@ -280,14 +261,12 @@ impl Delegate {
             generation: 0,
             loading: false,
             last_fetch: None,
-            settings: false,
-            about: false,
+            page: Page::Conditions,
             demo,
             save_error: None,
             forecast: None,
             forecast_error: None,
             forecast_loading: false,
-            forecast_page: false,
             forecast_generation: 0,
         };
         state.reload_forecast();
@@ -297,7 +276,7 @@ impl Delegate {
             popover: OnceCell::new(),
             controller: OnceCell::new(),
             timer: RefCell::new(None),
-            current_page: Cell::new(0),
+            shown_page: Cell::new(None),
             status_readings: RefCell::new(None),
         });
         // SAFETY: NSObject init has this signature; ivars are initialized above.
@@ -512,11 +491,11 @@ impl Delegate {
             return;
         };
         // Settings controls stay alive during a background refresh so keyboard focus is preserved.
-        if state.settings && self.ivars().current_page.get() == 200 {
+        if state.page == Page::Settings && self.ivars().shown_page.get() == Some(Page::Settings) {
             return;
         }
-        let root: Retained<NSView> = if state.forecast_page {
-            forecast_page::view(
+        let root: Retained<NSView> = match state.page {
+            Page::Forecast => forecast_page::view(
                 self.mtm(),
                 self,
                 &state.config,
@@ -524,23 +503,27 @@ impl Delegate {
                 state.forecast_loading,
                 state.forecast_error.as_deref(),
                 state.demo,
-            )
-        } else if state.settings {
-            self.settings_view(&state).into_super()
-        } else if state.about {
-            self.about_view(&state).into_super()
-        } else {
-            self.dashboard(&state).into_super()
+            ),
+            Page::Settings => self.settings_view(&state).into_super(),
+            Page::About => self.about_view(&state).into_super(),
+            Page::Conditions => self.dashboard(&state).into_super(),
         };
         controller.setView(&root);
-        self.ivars().current_page.set(if state.forecast_page {
-            400
-        } else if state.settings {
-            200
-        } else if state.about {
-            300
+        self.ivars().shown_page.set(Some(state.page));
+    }
+
+    fn show(&self, page: Page) {
+        self.ivars().state.borrow_mut().page = page;
+        self.render();
+    }
+
+    // The Settings and Credits buttons (and ⌘,) toggle back to the conditions page.
+    fn toggle_page(&self, page: Page) {
+        let current = self.ivars().state.borrow().page;
+        self.show(if current == page {
+            Page::Conditions
         } else {
-            100
+            page
         });
     }
 }

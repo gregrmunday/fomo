@@ -86,8 +86,8 @@ Review findings from 2026-10-19, worked through in order. Status is `todo`, `in 
 ### Structure
 
 - [x] **#12 Split `ui.rs`** (2,159 lines) into a `ui/` module: app and state, status item, charts, pages, shared widgets, previews. Move `forecast_ui.rs` in as well. Status: done
-- [ ] **#13 `Page` enum.** Replace `settings`, `about` and `forecast_page` booleans plus the 100/200/300/400 page numbers. Remove the unused `tag` override on `Dashboard`. Status: in progress (Claude)
-- [ ] **#14 Duplication.** `State` built in three places; wind-clearing block in three; status icon built twice; forecast page re-implements widget helpers and uses calibrated rather than sRGB colours. Status: todo
+- [x] **#13 `Page` enum.** Replace `settings`, `about` and `forecast_page` booleans plus the 100/200/300/400 page numbers. Remove the unused `tag` override on `Dashboard`. Status: done (manual check: click through Forecast, Settings, Credits and Back; Settings and Credits buttons toggle back to conditions)
+- [ ] **#14 Duplication.** `State` built in three places; wind-clearing block in three; status icon built twice; forecast page re-implements widget helpers and uses calibrated rather than sRGB colours. Status: in progress (Claude)
 - [ ] **#15 Forecast page typography.** Match the weights and colours used on the other pages. Status: todo
 
 ### Tests

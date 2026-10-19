@@ -19,14 +19,12 @@ pub(super) fn render_swell_previews(mtm: MainThreadMarker, dir: &str) {
             generation: 0,
             loading: false,
             last_fetch: None,
-            settings: false,
-            about: false,
+            page: Page::Conditions,
             demo: false,
             save_error: None,
             forecast: crate::forecast::load_local().ok().flatten(),
             forecast_error: None,
             forecast_loading: false,
-            forecast_page: false,
             forecast_generation: 0,
         };
         for (theme, name) in unsafe {
@@ -71,14 +69,12 @@ pub(super) fn render_previews(mtm: MainThreadMarker, dir: &str) {
         generation: 0,
         loading: false,
         last_fetch: None,
-        settings: false,
-        about: false,
+        page: Page::Conditions,
         demo: true,
         save_error: None,
         forecast: None,
         forecast_error: None,
         forecast_loading: false,
-        forecast_page: false,
         forecast_generation: 0,
     };
     // Every current reading missing: each must render as "—", never as zero.

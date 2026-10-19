@@ -594,7 +594,7 @@ impl Delegate {
 
     pub(super) fn settings_view(&self, state: &State) -> Retained<Dashboard> {
         let mtm = self.mtm();
-        let root = Dashboard::plain(mtm, 200);
+        let root = Dashboard::plain(mtm, Page::Settings);
         button(&root, self, "‹ Back", sel!(back:), 16.0, 17.0, 68.0, 27.0);
         label(
             &root,
@@ -733,7 +733,7 @@ impl Delegate {
 
     pub(super) fn about_view(&self, state: &State) -> Retained<Dashboard> {
         let mtm = self.mtm();
-        let root = Dashboard::plain(mtm, 300);
+        let root = Dashboard::plain(mtm, Page::About);
         button(&root, self, "‹ Back", sel!(back:), 16.0, 17.0, 68.0, 27.0);
         label(
             &root,

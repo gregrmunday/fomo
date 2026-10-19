@@ -2,7 +2,7 @@ use super::*;
 
 pub(super) struct CanvasState {
     pub(super) snapshot: Snapshot,
-    pub(super) page: isize,
+    pub(super) page: Page,
     pub(super) config: Config,
     pub(super) charts: Vec<HistoryChart>,
     pub(super) hovered: Cell<Option<(usize, usize)>>,
@@ -16,9 +16,6 @@ define_class!(
     pub(super) struct Dashboard;
     unsafe impl NSObjectProtocol for Dashboard {}
     impl Dashboard {
-        #[unsafe(method(tag))]
-        fn view_tag(&self) -> isize { self.ivars().page }
-
         #[unsafe(method(mouseEntered:))]
         fn mouse_entered(&self, event: &NSEvent) { self.hover_at(self.convertPoint_fromView(event.locationInWindow(),None)); }
 
@@ -35,7 +32,7 @@ define_class!(
         #[unsafe(method(drawRect:))]
         fn draw(&self, _dirty: NSRect) {
             NSColor::windowBackgroundColor().setFill(); NSBezierPath::bezierPathWithRect(self.bounds()).fill();
-            if self.ivars().page != 100 { return; }
+            if self.ivars().page != Page::Conditions { return; }
             fill_round(top_rect(22.0,140.0,336.0,168.0),16.0,&rgb(0.045,0.15,0.23));
             fill_round(top_rect(22.0,450.0,336.0,118.0),14.0,&NSColor::quaternaryLabelColor());
             let ring = NSBezierPath::bezierPathWithOvalInRect(top_rect(252.0,177.0,64.0,64.0));
@@ -71,7 +68,7 @@ impl Dashboard {
         config: Config,
         forecast: Option<&ForecastBundle>,
     ) -> Retained<Self> {
-        let view = Self::make(mtm, snapshot, config, 100, forecast);
+        let view = Self::make(mtm, snapshot, config, Page::Conditions, forecast);
         let label = NSTextField::wrappingLabelWithString(&NSString::from_str(""), mtm);
         label.setFont(Some(&NSFont::monospacedDigitSystemFontOfSize_weight(
             11.0, 0.4,
@@ -97,14 +94,14 @@ impl Dashboard {
         }
         view
     }
-    pub(super) fn plain(mtm: MainThreadMarker, page: isize) -> Retained<Self> {
+    pub(super) fn plain(mtm: MainThreadMarker, page: Page) -> Retained<Self> {
         Self::make(mtm, Snapshot::default(), Config::default(), page, None)
     }
     pub(super) fn make(
         mtm: MainThreadMarker,
         snapshot: Snapshot,
         config: Config,
-        page: isize,
+        page: Page,
         forecast: Option<&ForecastBundle>,
     ) -> Retained<Self> {
         let mut predictions = std::collections::BTreeMap::new();
