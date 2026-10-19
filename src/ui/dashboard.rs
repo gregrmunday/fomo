@@ -104,38 +104,9 @@ impl Dashboard {
         page: Page,
         forecast: Option<&ForecastBundle>,
     ) -> Retained<Self> {
-        let mut predictions = std::collections::BTreeMap::new();
-        if let Some(bundle) = forecast {
-            if let Some(series) = bundle.swell_panel.as_ref().and_then(|p| {
-                p.forecasts
-                    .iter()
-                    .find(|s| s.station_id == config.spot.id())
-            }) {
-                for point in &series.points {
-                    predictions.insert(point.valid_at_utc, point.clone());
-                }
-            }
-            if let Some(series) = bundle.for_station(config.spot.id()) {
-                for point in &series.points {
-                    if bundle.generated_at_utc <= point.valid_at_utc {
-                        predictions.insert(
-                            point.valid_at_utc,
-                            SwellPoint {
-                                valid_at_utc: point.valid_at_utc,
-                                hs_m: point.hs_m.clone(),
-                                tp_s: point.tp_s.clone(),
-                                direction: point.direction.clone(),
-                                issued_at_utc: bundle.issued_at_utc,
-                                generated_at_utc: bundle.generated_at_utc,
-                                model_version: bundle.model_version.clone(),
-                                origin: "forecast".into(),
-                            },
-                        );
-                    }
-                }
-            }
-        }
-        let predictions: Vec<_> = predictions.into_values().collect();
+        let predictions = forecast
+            .map(|b| b.predictions_for(config.spot.id()))
+            .unwrap_or_default();
         let charts = vec![
             HistoryChart::new(&snapshot, HistoryKind::Waves, &predictions),
             HistoryChart::new(&snapshot, HistoryKind::Wind, &[]),

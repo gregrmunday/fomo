@@ -92,11 +92,11 @@ Review findings from 2026-10-19, worked through in order. Status is `todo`, `in 
 
 ### Tests
 
-- [ ] **#16 Coverage.** `ForecastBundle::validate` has no tests. Move prediction merging out of `Dashboard::make` into `forecast.rs` and test it. Cover `age_text`, `stale` for future times, refresh-interval sanitising in `Config::load`, and `State::reload_forecast` (unchanged file skipped, load error surfaced, missing file is not an error). Status: in progress (Claude)
+- [x] **#16 Coverage.** `ForecastBundle::validate` has no tests. Move prediction merging out of `Dashboard::make` into `forecast.rs` and test it. Cover `age_text`, `stale` for future times, refresh-interval sanitising in `Config::load`, and `State::reload_forecast` (unchanged file skipped, load error surfaced, missing file is not an error). Status: done
 
 ### Docs and extras
 
-- [ ] **#17 Docs.** README lists DWD EWAM, which neither the app nor the worker uses. "M3 GPU" is hard-coded in the forecast status text. `--render-swell-preview` is undocumented. Status: todo
+- [ ] **#17 Docs.** README lists DWD EWAM, which neither the app nor the worker uses. "M3 GPU" is hard-coded in the forecast status text. `--render-swell-preview` is undocumented. Status: in progress (Claude)
 - [ ] **#18 Sea temperature.** `Wave.temperature` is parsed, QC-filtered and cached but never shown. Add it to the waves card. Status: todo
 
 ### Checked and fine

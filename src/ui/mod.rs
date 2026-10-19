@@ -81,17 +81,21 @@ impl State {
         }
     }
 
+    fn reload_forecast(&mut self) {
+        self.reload_forecast_from(&crate::forecast::output_path());
+    }
+
     // Reads the saved forecast only when the file has changed since it was loaded,
     // so the regular observation refresh costs one stat call.
-    fn reload_forecast(&mut self) {
+    fn reload_forecast_from(&mut self, path: &std::path::Path) {
         if self.demo || self.forecast_loading {
             return;
         }
         let loaded = self.forecast.as_ref().and_then(|b| b.modified);
-        if loaded.is_some() && crate::forecast::modified() == loaded {
+        if loaded.is_some() && crate::forecast::modified(path) == loaded {
             return;
         }
-        match crate::forecast::load_local() {
+        match crate::forecast::load_from(path) {
             Ok(Some(bundle)) => {
                 self.forecast = Some(bundle);
                 self.forecast_error = None;
@@ -597,4 +601,47 @@ pub fn run() {
         let _ = slot.set(delegate);
     });
     app.run();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{Duration, SystemTime};
+
+    #[test]
+    fn forecast_reload_skips_unchanged_files_and_reports_bad_ones() {
+        let dir = std::env::temp_dir().join(format!("fomo-reload-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("forecast.json");
+        let mut state = State::new(Config::default(), Snapshot::default(), false);
+
+        // No file yet: nothing to show, and not an error.
+        state.reload_forecast_from(&path);
+        assert!(state.forecast.is_none() && state.forecast_error.is_none());
+
+        std::fs::write(&path, "{").unwrap();
+        state.reload_forecast_from(&path);
+        let error = state.forecast_error.clone().unwrap();
+        assert!(error.starts_with("Saved forecast unreadable"), "{error}");
+
+        let valid = serde_json::to_vec(&crate::forecast::tests::sample()).unwrap();
+        std::fs::write(&path, valid).unwrap();
+        state.reload_forecast_from(&path);
+        assert!(state.forecast.is_some() && state.forecast_error.is_none());
+
+        // Unchanged: not re-read, so this marker survives.
+        state.forecast_error = Some("marker".into());
+        state.reload_forecast_from(&path);
+        assert_eq!(state.forecast_error.as_deref(), Some("marker"));
+
+        // A newer modification time means the file is read again.
+        let file = std::fs::File::options().write(true).open(&path).unwrap();
+        file.set_modified(SystemTime::now() + Duration::from_secs(60))
+            .unwrap();
+        drop(file);
+        state.reload_forecast_from(&path);
+        assert_eq!(state.forecast_error, None);
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }

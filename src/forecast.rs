@@ -124,6 +124,37 @@ impl ForecastBundle {
     pub fn for_station(&self, id: &str) -> Option<&BuoyForecast> {
         self.forecasts.iter().find(|f| f.station_id == id)
     }
+    // Model values for the dashboard's swell chart, ordered by valid time. Panel
+    // predictions cover the past; the current forecast replaces them from its
+    // generation time onwards.
+    pub fn predictions_for(&self, id: &str) -> Vec<SwellPoint> {
+        let mut predictions = BTreeMap::new();
+        let panel = self
+            .swell_panel
+            .iter()
+            .flat_map(|p| &p.forecasts)
+            .find(|s| s.station_id == id);
+        for point in panel.into_iter().flat_map(|s| &s.points) {
+            predictions.insert(point.valid_at_utc, point.clone());
+        }
+        let current = self.for_station(id).into_iter().flat_map(|b| &b.points);
+        for point in current.filter(|p| p.valid_at_utc >= self.generated_at_utc) {
+            predictions.insert(
+                point.valid_at_utc,
+                SwellPoint {
+                    valid_at_utc: point.valid_at_utc,
+                    hs_m: point.hs_m.clone(),
+                    tp_s: point.tp_s.clone(),
+                    direction: point.direction.clone(),
+                    issued_at_utc: self.issued_at_utc,
+                    generated_at_utc: self.generated_at_utc,
+                    model_version: self.model_version.clone(),
+                    origin: "forecast".into(),
+                },
+            );
+        }
+        predictions.into_values().collect()
+    }
     pub fn validate(&self) -> Result<(), String> {
         if self.schema != "fomo.wave_forecast" || self.schema_version != 2 {
             return Err("Unsupported forecast schema".into());
@@ -147,6 +178,7 @@ impl ForecastBundle {
         if let Some(panel) = &self.swell_panel {
             if panel.window_end_utc - panel.window_start_utc != chrono::Duration::hours(24)
                 || panel.forecasts.len() != 2
+                || panel.forecasts[0].station_id == panel.forecasts[1].station_id
             {
                 return Err("Invalid 24-hour swell panel".into());
             }
@@ -259,15 +291,17 @@ pub fn output_path() -> std::path::PathBuf {
         .unwrap_or_else(|| project_dir().join("forecasts/fomo-v2.json"))
 }
 // None when no forecast has been generated yet.
-pub fn load_local() -> Result<Option<ForecastBundle>, String> {
-    let path = output_path();
+pub fn load_from(path: &Path) -> Result<Option<ForecastBundle>, String> {
     if !path.exists() {
         return Ok(None);
     }
-    ForecastBundle::load(&path).map(Some)
+    ForecastBundle::load(path).map(Some)
 }
-pub fn modified() -> Option<SystemTime> {
-    fs::metadata(output_path()).and_then(|m| m.modified()).ok()
+pub fn load_local() -> Result<Option<ForecastBundle>, String> {
+    load_from(&output_path())
+}
+pub fn modified(path: &Path) -> Option<SystemTime> {
+    fs::metadata(path).and_then(|m| m.modified()).ok()
 }
 
 // The worker's final message, read from the end of its log. Decoding is lossy so that
@@ -328,8 +362,170 @@ pub fn regenerate() -> Result<ForecastBundle, String> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
+    use serde_json::{Value, json};
+
+    fn at(text: &str) -> DateTime<Utc> {
+        text.parse().unwrap()
+    }
+
+    // A valid bundle: issued 09:00, generated 09:05, 168 hourly points per buoy from
+    // 10:00, and a 24-hour swell panel from 21:00 the previous evening.
+    pub(crate) fn sample() -> Value {
+        let issued = at("2026-10-19T09:00:00Z");
+        let generated = at("2026-10-19T09:05:00Z");
+        let weights = json!({"ecmwf_wam": 0.6, "ncep_gfswave025": 0.4});
+        let direction = json!({
+            "from_deg": 285.0, "reference": "magnetic", "parameter": "spectral_peak",
+            "interval80": {"centre_deg": 285.0, "half_width_deg": 20.0, "start_deg": 265.0,
+                           "end_deg": 305.0, "wraps_north": false, "full_circle": false},
+            "resultant_length": 0.9
+        });
+        let quantiles =
+            |median: f64| json!({"p10": median * 0.8, "p50": median, "p90": median * 1.2});
+        let buoy = |id: &str, name: &str| {
+            let points: Vec<_> = (1..=168)
+                .map(|lead| {
+                    json!({
+                        "valid_at_utc": issued + chrono::Duration::hours(lead),
+                        "lead_hours": lead as f64,
+                        "hs_m": quantiles(1.5),
+                        "tp_s": quantiles(12.5),
+                        "direction": direction,
+                        "expert_weights": {"height": weights, "period": weights, "direction": weights}
+                    })
+                })
+                .collect();
+            json!({"station_id": id, "name": name, "status": "experimental",
+                   "supported_through_utc": issued + chrono::Duration::hours(168), "points": points})
+        };
+        let start = at("2026-10-18T21:00:00Z");
+        let panel = |id: &str| {
+            let points: Vec<_> = (0..=24)
+                .map(|hour| {
+                    let valid = start + chrono::Duration::hours(hour);
+                    let issued = valid - chrono::Duration::hours(6);
+                    json!({
+                        "valid_at_utc": valid, "hs_m": quantiles(1.2), "tp_s": quantiles(11.0),
+                        "direction": direction, "issued_at_utc": issued,
+                        "generated_at_utc": issued + chrono::Duration::minutes(5),
+                        "model_version": "panel",
+                        "origin": if valid < generated { "reconstructed" } else { "forecast" }
+                    })
+                })
+                .collect();
+            json!({"station_id": id, "points": points})
+        };
+        json!({
+            "schema": "fomo.wave_forecast", "schema_version": 2, "model_version": "test",
+            "issued_at_utc": issued, "generated_at_utc": generated,
+            "refresh_after_utc": at("2026-10-19T15:00:00Z"),
+            "stale_after_utc": at("2026-10-19T15:00:00Z"),
+            "units": {"height": "m", "period": "s", "direction": "degree"},
+            "warnings": [],
+            "forecasts": [buoy("76", "Perranporth"), buoy("107", "Porthleven")],
+            "swell_panel": {
+                "window_start_utc": start, "window_end_utc": start + chrono::Duration::hours(24),
+                "warning": null, "forecasts": [panel("76"), panel("107")]
+            }
+        })
+    }
+
+    type Mutation = fn(&mut Value);
+
+    fn check(mutate: Mutation) -> Result<(), String> {
+        let mut value = sample();
+        mutate(&mut value);
+        serde_json::from_value::<ForecastBundle>(value)
+            .map_err(|e| e.to_string())?
+            .validate()
+    }
+
+    #[test]
+    fn sample_forecast_is_valid_with_or_without_a_swell_panel() {
+        assert_eq!(check(|_| {}), Ok(()));
+        assert_eq!(check(|v| v["swell_panel"] = Value::Null), Ok(()));
+    }
+
+    #[test]
+    fn validation_rejects_each_broken_rule() {
+        let cases: [(&str, Mutation); 14] = [
+            ("Unsupported forecast schema", |v| {
+                v["schema_version"] = json!(3)
+            }),
+            ("Unexpected forecast units", |v| {
+                v["units"]["height"] = json!("ft")
+            }),
+            ("Invalid forecast issue time", |v| {
+                v["generated_at_utc"] = json!("2026-10-19T08:00:00Z")
+            }),
+            ("Missing or duplicate buoy", |v| {
+                v["forecasts"][1]["station_id"] = json!("76")
+            }),
+            ("Invalid 24-hour swell panel", |v| {
+                v["swell_panel"]["forecasts"][1]["station_id"] = json!("76")
+            }),
+            ("Invalid swell-panel prediction", |v| {
+                v["swell_panel"]["forecasts"][0]["points"][3]["origin"] = json!("guess")
+            }),
+            ("Expected 168 hourly points", |v| {
+                v["forecasts"][0]["points"].as_array_mut().unwrap().pop();
+            }),
+            ("Forecast hours are not consecutive", |v| {
+                v["forecasts"][0]["points"][5]["valid_at_utc"] = json!("2026-10-19T15:30:00Z")
+            }),
+            ("Invalid forecast values or time", |v| {
+                v["forecasts"][0]["points"][0]["hs_m"]["p10"] = json!(9.0)
+            }),
+            ("Invalid circular direction", |v| {
+                v["forecasts"][0]["points"][0]["direction"]["from_deg"] = json!(360.0)
+            }),
+            ("Invalid direction uncertainty arc", |v| {
+                v["forecasts"][0]["points"][0]["direction"]["interval80"]["full_circle"] =
+                    json!(true)
+            }),
+            ("Unexpected expert identities", |v| {
+                v["forecasts"][0]["points"][0]["expert_weights"]["height"] =
+                    json!({"ecmwf_wam": 0.5, "dwd_ewam": 0.5})
+            }),
+            ("Invalid expert allocation", |v| {
+                v["forecasts"][0]["points"][0]["expert_weights"]["period"] =
+                    json!({"ecmwf_wam": 0.7, "ncep_gfswave025": 0.4})
+            }),
+            ("Forecast horizon mismatch", |v| {
+                v["forecasts"][0]["supported_through_utc"] = json!("2026-10-26T08:00:00Z")
+            }),
+        ];
+        for (expected, mutate) in cases {
+            assert_eq!(check(mutate), Err(expected.into()));
+        }
+    }
+
+    #[test]
+    fn chart_predictions_switch_to_the_current_forecast_at_generation_time() {
+        let bundle: ForecastBundle = serde_json::from_value(sample()).unwrap();
+        let predictions = bundle.predictions_for("76");
+        // 25 panel hours and 168 forecast hours, overlapping from 10:00 to 21:00.
+        assert_eq!(predictions.len(), 25 + 168 - 12);
+        assert!(
+            predictions
+                .windows(2)
+                .all(|w| w[0].valid_at_utc < w[1].valid_at_utc)
+        );
+        for p in &predictions {
+            if p.valid_at_utc >= bundle.generated_at_utc {
+                assert_eq!(
+                    (p.origin.as_str(), p.issued_at_utc),
+                    ("forecast", bundle.issued_at_utc)
+                );
+            } else {
+                assert_eq!(p.model_version, "panel");
+                assert_eq!(p.issued_at_utc, p.valid_at_utc - chrono::Duration::hours(6));
+            }
+        }
+        assert!(bundle.predictions_for("999").is_empty());
+    }
 
     #[test]
     fn worker_error_comes_from_the_end_of_a_long_log() {

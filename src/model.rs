@@ -102,14 +102,18 @@ fn support_dir() -> Option<PathBuf> {
 
 impl Config {
     pub fn load() -> Self {
-        let mut config: Self = support_dir()
+        support_dir()
             .and_then(|p| fs::read(p.join("settings.json")).ok())
-            .and_then(|b| serde_json::from_slice(&b).ok())
-            .unwrap_or_default();
+            .and_then(|b| Self::from_json(&b))
+            .unwrap_or_default()
+    }
+    // Missing fields take their defaults; an unsupported interval becomes 5 minutes.
+    fn from_json(bytes: &[u8]) -> Option<Self> {
+        let mut config: Self = serde_json::from_slice(bytes).ok()?;
         if ![5, 10, 15, 30].contains(&config.refresh_minutes) {
             config.refresh_minutes = 5;
         }
-        config
+        Some(config)
     }
     pub fn save(&self) -> Result<(), String> {
         save_json("settings.json", self)
@@ -338,6 +342,31 @@ mod tests {
             .round(),
             34.0
         );
+    }
+
+    #[test]
+    fn saved_settings_tolerate_missing_fields_and_odd_intervals() {
+        let config = Config::from_json(br#"{"spot":"Porthleven","refresh_minutes":7}"#).unwrap();
+        assert_eq!(config.spot, Spot::Porthleven);
+        assert_eq!(config.refresh_minutes, 5);
+        assert_eq!(config.wind_unit, WindUnit::Mph);
+        let config = Config::from_json(br#"{"refresh_minutes":15}"#).unwrap();
+        assert_eq!(config.refresh_minutes, 15);
+        assert!(Config::from_json(b"not json").is_none());
+    }
+
+    #[test]
+    fn ages_read_naturally_and_future_times_count_as_stale() {
+        let ago = |minutes| Utc::now() - chrono::Duration::minutes(minutes);
+        assert_eq!(age_text(ago(0)), "just now");
+        assert_eq!(age_text(ago(59)), "59m ago");
+        assert_eq!(age_text(ago(61)), "1h 1m ago");
+        assert_eq!(age_text(ago(3 * 1440 + 5)), "3d ago");
+        assert!(!stale(ago(30), 60));
+        assert!(stale(ago(61), 60));
+        // A timestamp more than five minutes ahead of this clock is not trusted.
+        assert!(!stale(ago(-4), 60));
+        assert!(stale(ago(-10), 60));
     }
 
     #[test]
