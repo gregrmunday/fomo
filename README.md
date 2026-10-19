@@ -20,7 +20,7 @@ brew install gregrmunday/tap/fomo
 brew services start fomo
 ```
 
-The first command builds Fomo on your Mac, which takes a few minutes the first time. The second starts it now and at every login, and the wave icon appears in the menu bar. Click it for the conditions panel.
+On an Apple Silicon Mac with macOS 15 or later, the first command installs a ready-made build in seconds. Older Apple Silicon Macs build Fomo from source, which takes a few minutes and about 2.5 GB of build tools (`brew autoremove` removes them afterwards). Intel Macs aren't supported, because Homebrew no longer provides Rust for them. The second command starts Fomo now and at every login, and the wave icon appears in the menu bar. Click it for the conditions panel.
 
 - **Stop it, and stop it starting at login:** `brew services stop fomo`. Quitting from the panel (⌘Q) only lasts until the next login.
 - **Update:** `brew upgrade fomo`, then `brew services restart fomo`.

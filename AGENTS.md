@@ -69,12 +69,14 @@ For a refactor that should not change the UI, render previews from the old and n
 
 ## Distribution (published 2026-10-19)
 
+Verified on 2026-10-19: `brew install gregrmunday/tap/fomo` poured the bottle on this macOS 27 Mac in 21 s, and `brew test`, the bundle signature and `brew services run`/`stop` all pass. The source-build fallback also works (Fomo itself compiles in 18 s).
+
 Friends install with `brew install gregrmunday/tap/fomo`, then `brew services start fomo`.
 
 | Repository | Visibility | Purpose |
 | --- | --- | --- |
 | `gregrmunday/fomo` (this repo) | public | App source. The `forecast` branch holds only `fomo-v2.json`, as one commit replaced by every publish. |
-| `gregrmunday/homebrew-tap` (`~/Documents/homebrew-tap`) | public | `Formula/fomo.rb`, plus workflows that build bottles for macOS 15 on Apple Silicon and Intel. |
+| `gregrmunday/homebrew-tap` (`~/Documents/homebrew-tap`) | public | `Formula/fomo.rb`, plus Homebrew's test-bot and pr-pull workflows, which build an Apple Silicon bottle on macOS 15. That bottle also serves macOS 26 and 27. |
 | `gregrmunday/fomo-forecast` (`~/Documents/fomo-forecast`) | private | Snapshot of the forecast worker and model; publishes a forecast every three hours. |
 
 How forecasts reach apps:
@@ -93,7 +95,8 @@ Releasing a new app version:
 Still open:
 
 - The app and worker ship Coastal Monitoring's published *development* API key with a Referer workaround. The user should request a personal key before sharing widely.
-- Macs older than macOS 15 have no bottle, so they build from source. That needs current Command Line Tools and installs Homebrew's Rust; `brew autoremove` reclaims it afterwards.
+- Apple Silicon Macs older than macOS 15 have no bottle, so they build from source. That needs current Command Line Tools and about 2.5 GB of Homebrew Rust and LLVM; `brew autoremove` reclaims it afterwards.
+- Intel Macs are unsupported. Homebrew no longer bottles Rust for Intel (test-bot skips the formula there), so a source build would compile Rust for hours. If a friend needs it, the option is a separately built universal `.app`, which Gatekeeper will warn about because it's unsigned.
 
 ## Review status (2026-10-19)
 
