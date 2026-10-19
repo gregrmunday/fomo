@@ -47,6 +47,10 @@ For a refactor that should not change the UI, render previews from the old and n
 
 `--render-preview` writes `conditions-missing-*` with every current reading absent, which is the quickest check of the `—` invariant below.
 
+## Data notes
+
+- Wind comes from shore stations, not buoys. Porthleven has no station. As of 2026-10-19 Penzance (17 km from Porthleven) has sent nothing since about 1 April 2026 and its last record has QC flag 9, so automatic selection gives Porthleven the Perranporth station (33 km). Both spots then show identical wind and wind history. This is expected, not a bug.
+
 ## Invariants
 
 - A missing or invalid value displays as `—`, never `0`.
