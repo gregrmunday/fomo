@@ -258,8 +258,26 @@ pub fn load_local() -> Result<ForecastBundle, String> {
     ForecastBundle::load(&output_path())
 }
 
+// The worker's final message, read from the end of its log. Decoding is lossy so that
+// stray bytes, or a character split where the tail starts, cannot hide the error.
+fn last_log_line(path: &Path) -> Option<String> {
+    use std::io::{Read, Seek, SeekFrom};
+    const TAIL: u64 = 64 * 1024;
+    let mut file = fs::File::open(path).ok()?;
+    let length = file.metadata().ok()?.len();
+    file.seek(SeekFrom::Start(length.saturating_sub(TAIL)))
+        .ok()?;
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes).ok()?;
+    String::from_utf8_lossy(&bytes)
+        .lines()
+        .rev()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .map(|line| line.chars().take(250).collect())
+}
+
 pub fn regenerate() -> Result<ForecastBundle, String> {
-    use std::io::Read;
     use std::process::{Command, Stdio};
     use std::time::{Duration, Instant};
     let project = project_dir();
@@ -286,16 +304,7 @@ pub fn regenerate() -> Result<ForecastBundle, String> {
             if status.success() {
                 return load_local();
             }
-            let mut detail = String::new();
-            if let Ok(file) = std::fs::File::open(log_path) {
-                let _ = file.take(65536).read_to_string(&mut detail);
-            }
-            let last = detail
-                .lines()
-                .rev()
-                .find(|line| !line.trim().is_empty())
-                .unwrap_or("Forecast worker failed");
-            return Err(last.chars().take(250).collect());
+            return Err(last_log_line(&log_path).unwrap_or_else(|| "Forecast worker failed".into()));
         }
         if Instant::now() > deadline {
             let _ = child.kill();
@@ -303,5 +312,34 @@ pub fn regenerate() -> Result<ForecastBundle, String> {
             return Err("Forecast refresh timed out. The previous forecast is retained.".into());
         }
         std::thread::sleep(Duration::from_millis(100));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn worker_error_comes_from_the_end_of_a_long_log() {
+        let path = std::env::temp_dir().join(format!("fomo-log-test-{}.log", std::process::id()));
+        // Over 64 KB of three-byte characters, then an invalid byte, then the message
+        // that matters. A 64 KB window at either end splits a character here; reading
+        // the head as strict UTF-8 used to yield only the generic failure message.
+        let mut log = "…".repeat(30_000).into_bytes();
+        log.extend_from_slice(b"stray \xff byte\nRuntimeError: MPS backend out of memory\n\n");
+        assert_eq!(
+            log[log.len() - 64 * 1024] & 0xC0,
+            0x80,
+            "tail must start mid-character"
+        );
+        fs::write(&path, &log).unwrap();
+        let line = last_log_line(&path);
+        fs::remove_file(&path).unwrap();
+        assert!(log.len() > 64 * 1024);
+        assert_eq!(
+            line.as_deref(),
+            Some("RuntimeError: MPS backend out of memory")
+        );
+        assert_eq!(last_log_line(&path), None);
     }
 }

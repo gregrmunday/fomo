@@ -65,11 +65,11 @@ Review findings from 2026-10-19, worked through in order. Status is `todo`, `in 
 - [x] **#3 Unit label placement.** `Delegate::dashboard` positions the height unit with `height.len()` (bytes, so `—` counts as 3) times 27pt; the wind unit uses a fixed x. Measure the rendered number instead. Status: done
 - [x] **#4 Save error never clears.** `Delegate::complete` sets `save_error` on a failed cache write but never clears it on success. Status: done
 - [x] **#5 Forecast axis label rounding.** `forecast_ui::view` labels the top gridline with `{high:.0}`; 1.3 m reads as "1". Share the scale computation between drawing and labelling. Status: done
-- [ ] **#6 Worker error lost.** `forecast::regenerate` reads the first 64 KB of the log instead of the last, and `read_to_string` yields nothing on invalid UTF-8. Status: in progress (Claude)
+- [x] **#6 Worker error lost.** `forecast::regenerate` reads the first 64 KB of the log instead of the last, and `read_to_string` yields nothing on invalid UTF-8. Status: done
 
 ### Robustness and UX
 
-- [ ] **#7 Refresh on wake.** Only the repeating timer triggers refreshes. Refresh shortly after `NSWorkspaceDidWakeNotification`, and when the popover opens if the last fetch is older than the interval. Use wall-clock time (`Instant` stops during sleep on macOS). Status: todo
+- [ ] **#7 Refresh on wake.** Only the repeating timer triggers refreshes. Refresh shortly after `NSWorkspaceDidWakeNotification`, and when the popover opens if the last fetch is older than the interval. Use wall-clock time (`Instant` stops during sleep on macOS). Status: in progress (Claude)
 - [ ] **#8 Network error detail.** `data::get` collapses DNS, timeout, TLS and HTTP failures into one message and matches `"key"` anywhere in the body. Classify by curl exit code and HTTP status. Status: todo
 - [ ] **#9 Forecast reload.** `Delegate::complete` re-reads and re-validates the forecast JSON on the main thread every refresh, and load errors are silently dropped. Reload only when the file changes and show load errors. Status: todo
 - [ ] **#10 API key in process arguments.** The key is visible to `ps`. Pass it to curl through `--config -` on stdin. Status: todo
