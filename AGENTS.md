@@ -88,11 +88,11 @@ Review findings from 2026-10-19, worked through in order. Status is `todo`, `in 
 - [x] **#12 Split `ui.rs`** (2,159 lines) into a `ui/` module: app and state, status item, charts, pages, shared widgets, previews. Move `forecast_ui.rs` in as well. Status: done
 - [x] **#13 `Page` enum.** Replace `settings`, `about` and `forecast_page` booleans plus the 100/200/300/400 page numbers. Remove the unused `tag` override on `Dashboard`. Status: done (manual check: click through Forecast, Settings, Credits and Back; Settings and Credits buttons toggle back to conditions)
 - [x] **#14 Duplication.** `State` built in three places; wind-clearing block in three; status icon built twice; forecast page re-implements widget helpers and uses calibrated rather than sRGB colours. Status: done
-- [ ] **#15 Forecast page typography.** Match the weights and colours used on the other pages. Status: in progress (Claude)
+- [x] **#15 Forecast page typography.** Match the weights and colours used on the other pages. Status: done
 
 ### Tests
 
-- [ ] **#16 Coverage.** `ForecastBundle::validate` has no tests. Move prediction merging out of `Dashboard::make` into `forecast.rs` and test it. Cover `age_text`, `stale` for future times, refresh-interval sanitising in `Config::load`, and `State::reload_forecast` (unchanged file skipped, load error surfaced, missing file is not an error). Status: todo
+- [ ] **#16 Coverage.** `ForecastBundle::validate` has no tests. Move prediction merging out of `Dashboard::make` into `forecast.rs` and test it. Cover `age_text`, `stale` for future times, refresh-interval sanitising in `Config::load`, and `State::reload_forecast` (unchanged file skipped, load error surfaced, missing file is not an error). Status: in progress (Claude)
 
 ### Docs and extras
 

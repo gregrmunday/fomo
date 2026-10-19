@@ -95,13 +95,14 @@ pub(super) fn multiline(
     h: f64,
     size: f64,
     color: &NSColor,
-) {
+) -> Retained<NSTextField> {
     let label = NSTextField::wrappingLabelWithString(&NSString::from_str(text), mtm);
     label.setFrame(top_rect(x, y, w, h));
     label.setFont(Some(&NSFont::systemFontOfSize(size)));
     label.setTextColor(Some(color));
     label.setSelectable(true);
     parent.addSubview(&label);
+    label
 }
 
 #[allow(clippy::too_many_arguments)]

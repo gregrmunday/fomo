@@ -58,7 +58,7 @@ define_class!(
                 let index = (day * 24).min(buoy.points.len()-1);
                 let direction = buoy.points[index].direction.from_deg;
                 let (dx,dy) = travel_vector(direction);
-                let x = CHART_LEFT+index as f64/(buoy.points.len()-1) as f64*CHART_WIDTH;
+                let x = chart_x(buoy, index);
                 let y = HEIGHT-582.;
                 let tip = NSPoint::new(x+dx*10.,y+dy*10.);
                 let line = NSBezierPath::new();
@@ -162,23 +162,9 @@ fn axis_text(value: f64) -> String {
         format!("{value:.0}")
     }
 }
-#[allow(clippy::too_many_arguments)]
-fn text(
-    parent: &NSView,
-    mtm: MainThreadMarker,
-    value: &str,
-    x: f64,
-    y: f64,
-    w: f64,
-    h: f64,
-    size: f64,
-) -> Retained<NSTextField> {
-    let label = NSTextField::wrappingLabelWithString(&NSString::from_str(value), mtm);
-    label.setFrame(top_rect(x, y, w, h));
-    label.setFont(Some(&NSFont::systemFontOfSize(size)));
-    label.setTextColor(Some(&NSColor::labelColor()));
-    parent.addSubview(&label);
-    label
+// X position of a forecast hour on the charts.
+fn chart_x(buoy: &BuoyForecast, index: usize) -> f64 {
+    CHART_LEFT + index as f64 / (buoy.points.len() - 1) as f64 * CHART_WIDTH
 }
 pub fn view(
     mtm: MainThreadMarker,
@@ -193,15 +179,29 @@ pub fn view(
         .and_then(|b| b.for_station(config.spot.id()))
         .cloned();
     let view = ForecastCanvas::new(mtm, buoy, config.clone());
-    text(
+    // Header follows the other pages: back at top left, then the spot as the title,
+    // with its refresh action alongside as on the conditions page.
+    button(
+        &view,
+        target,
+        "‹ Observations",
+        sel!(back:),
+        16.,
+        17.,
+        112.,
+        27.,
+    );
+    label(
         &view,
         mtm,
-        "F O M O   ·   FORECAST",
+        "FORECAST · NEXT SEVEN DAYS",
         22.,
-        19.,
-        336.,
-        26.,
-        14.,
+        52.,
+        320.,
+        15.,
+        9.,
+        0.4,
+        &muted(),
     );
     let name = view
         .ivars()
@@ -209,26 +209,7 @@ pub fn view(
         .as_ref()
         .map(|b| b.name.as_str())
         .unwrap_or(config.spot.name());
-    text(
-        &view,
-        mtm,
-        &format!("{name} · next seven days"),
-        22.,
-        49.,
-        336.,
-        25.,
-        20.,
-    );
-    button(
-        &view,
-        target,
-        "‹ Observations",
-        sel!(back:),
-        17.,
-        85.,
-        112.,
-        28.,
-    );
+    label(&view, mtm, name, 22., 70., 185., 32., 22., 0.5, &ink());
     let refresh = button(
         &view,
         target,
@@ -239,9 +220,9 @@ pub fn view(
         },
         sel!(refreshForecast:),
         207.,
-        85.,
+        73.,
         151.,
-        28.,
+        26.,
     );
     refresh.setEnabled(!loading && !demo);
     refresh.setKeyEquivalent(&NSString::from_str("r"));
@@ -263,76 +244,74 @@ pub fn view(
     } else {
         "Refresh to generate your local GPU forecast".into()
     };
-    let status_label = text(&view, mtm, &status, 22., 121., 336., 24., 10.);
-    status_label.setToolTip(Some(&NSString::from_str(&status)));
-    if error.is_some() || bundle.is_some_and(|b| b.is_stale()) {
-        status_label.setTextColor(Some(&NSColor::systemOrangeColor()));
-    }
-    let readout = text(&view, mtm, "", 22., 150., 336., 45., 10.);
+    let status_color = if error.is_some() || bundle.is_some_and(|b| b.is_stale()) {
+        amber()
+    } else {
+        muted()
+    };
+    label(
+        &view,
+        mtm,
+        &status,
+        22.,
+        109.,
+        336.,
+        18.,
+        11.,
+        0.,
+        &status_color,
+    );
+    let readout = multiline(&view, mtm, "", 22., 150., 336., 45., 10., &ink());
+    // Fixed-width digits keep the readout still while hovering across hours.
+    readout.setFont(Some(&NSFont::monospacedDigitSystemFontOfSize_weight(
+        10., 0.,
+    )));
     let _ = view.ivars().readout.set(readout);
     view.update_readout();
     if let Some(buoy) = &view.ivars().buoy {
         for (channel, top, title) in [
-            (0, 198., "SIGNIFICANT HEIGHT Hs"),
-            (1, 364., "PEAK PERIOD Tp"),
+            (0, 198., "SIGNIFICANT HEIGHT · Hs"),
+            (1, 364., "PEAK PERIOD · Tp"),
         ] {
-            text(&view, mtm, title, 22., top, 270., 18., 10.);
-            text(
-                &view,
-                mtm,
-                &axis_text(scale_max(config, buoy, channel)),
-                12.,
-                top + 19.,
-                27.,
-                16.,
-                9.,
-            );
-            text(&view, mtm, "0", 24., top + 115., 15., 16., 9.);
+            label(&view, mtm, title, 22., top, 270., 16., 9., 0.5, &muted());
+            let axis = |text: &str, y: f64| {
+                label(&view, mtm, text, 4., y, 32., 16., 9., 0., &muted())
+                    .setAlignment(NSTextAlignment::Right);
+            };
+            axis(&axis_text(scale_max(config, buoy, channel)), top + 19.);
+            axis("0", top + 115.);
             for day in 0..7 {
                 let index = (day * 24).min(buoy.points.len() - 1);
-                let x =
-                    CHART_LEFT + index as f64 / (buoy.points.len() - 1) as f64 * CHART_WIDTH - 17.;
-                text(
-                    &view,
-                    mtm,
-                    &buoy.points[index]
-                        .valid_at_utc
-                        .with_timezone(&Local)
-                        .format("%a %d")
-                        .to_string(),
-                    x,
-                    top + 132.,
-                    48.,
-                    16.,
-                    8.,
-                );
+                let date = buoy.points[index]
+                    .valid_at_utc
+                    .with_timezone(&Local)
+                    .format("%a %d")
+                    .to_string();
+                let x = chart_x(buoy, index) - 24.;
+                label(&view, mtm, &date, x, top + 132., 48., 16., 9., 0., &muted())
+                    .setAlignment(NSTextAlignment::Center);
             }
         }
-        text(
+        label(
             &view,
             mtm,
             "PEAK DIRECTION · ARROWS SHOW TRAVEL",
             22.,
             541.,
             336.,
-            18.,
-            10.,
+            16.,
+            9.,
+            0.5,
+            &muted(),
         );
         for day in 0..7 {
             let index = (day * 24).min(buoy.points.len() - 1);
-            let x = CHART_LEFT + index as f64 / (buoy.points.len() - 1) as f64 * CHART_WIDTH - 13.;
-            text(
-                &view,
-                mtm,
-                compass(buoy.points[index].direction.from_deg),
-                x,
-                601.,
-                42.,
-                16.,
-                9.,
-            );
+            let point = compass(buoy.points[index].direction.from_deg);
+            let x = chart_x(buoy, index) - 21.;
+            label(&view, mtm, point, x, 601., 42., 16., 9., 0.4, &ink())
+                .setAlignment(NSTextAlignment::Center);
         }
-        text(
+        multiline(
             &view,
             mtm,
             "Hover over the charts to inspect each hour.",
@@ -341,17 +320,18 @@ pub fn view(
             336.,
             18.,
             10.,
+            &muted(),
         );
         let note_value = if buoy.status == "experimental" {
             "Shading = nominal 80% range · direction = magnetic FROM\nExperimental: long-lead and winter coverage unverified."
         } else {
             "Shading = nominal 80% range · direction = magnetic FROM"
         };
-        let note = text(&view, mtm, note_value, 22., 658., 336., 38., 10.);
+        let note = multiline(&view, mtm, note_value, 22., 658., 336., 38., 10., &muted());
         if let Some(bundle) = bundle {
             note.setToolTip(Some(&NSString::from_str(&bundle.warnings.join("\n"))));
         }
-        text(
+        label(
             &view,
             mtm,
             "ECMWF WAM · GFS Wave",
@@ -360,9 +340,11 @@ pub fn view(
             336.,
             18.,
             10.,
+            0.,
+            &muted(),
         );
     } else {
-        text(
+        multiline(
             &view,
             mtm,
             if demo {
@@ -374,7 +356,8 @@ pub fn view(
             235.,
             336.,
             100.,
-            14.,
+            13.,
+            &muted(),
         );
     }
     let tracking = unsafe {
