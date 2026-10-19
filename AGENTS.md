@@ -97,7 +97,7 @@ Review findings from 2026-10-19, worked through in order. Status is `todo`, `in 
 ### Docs and extras
 
 - [x] **#17 Docs.** README lists DWD EWAM, which neither the app nor the worker uses. "M3 GPU" is hard-coded in the forecast status text. `--render-swell-preview` is undocumented. Status: done
-- [ ] **#18 Sea temperature.** `Wave.temperature` is parsed, QC-filtered and cached but never shown. Add it to the waves card. Status: in progress (Claude)
+- [x] **#18 Sea temperature.** `Wave.temperature` is parsed, QC-filtered and cached but never shown. Add it to the waves card. Status: done
 
 ### Checked and fine
 

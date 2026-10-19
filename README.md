@@ -7,7 +7,7 @@ Cornwall's buoys, at a glance. A small **Rust macOS menu bar app** for Perranpor
 ≋ 6.9ft 13s   20mph
 ```
 
-Click the readings to open the conditions panel: significant wave height, peak period and direction, a 12 hour wave history, wind speed, direction and gusts. Settings let you switch spots, units, wind stations, refresh interval, or use a shorter menu bar title. The wave icon remains in the menu bar while the app runs; no Dock window is needed.
+Click the readings to open the conditions panel: significant wave height, peak period and direction, sea temperature (°C), a 12 hour wave history, wind speed, direction and gusts. Settings let you switch spots, units, wind stations, refresh interval, or use a shorter menu bar title. The wave icon remains in the menu bar while the app runs; no Dock window is needed.
 
 The default menu bar layout stacks each direction above its readings, with a thin vertical divider between waves and wind. Arrows rotate continuously using the original fractional bearings. Hover over the wave history to see time and height, or the 12 hour wind history to see time, speed, gusts and direction. Wave height defaults to feet and wind speed (including gusts) to mph; both can be changed in Settings.
 

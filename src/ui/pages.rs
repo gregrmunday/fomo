@@ -134,6 +134,11 @@ impl Delegate {
         label(
             &root, mtm, "WAVES", 40.0, 154.0, 110.0, 16.0, 10.0, 0.5, &pale,
         );
+        let sea = format!("SEA {}", temperature_text(wave.and_then(|w| w.temperature)));
+        label(
+            &root, mtm, &sea, 203.0, 154.0, 140.0, 16.0, 10.0, 0.5, &pale,
+        )
+        .setAlignment(NSTextAlignment::Right);
         label(
             &root,
             mtm,

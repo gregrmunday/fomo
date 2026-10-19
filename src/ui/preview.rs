@@ -56,6 +56,7 @@ pub(super) fn render_previews(mtm: MainThreadMarker, dir: &str) {
     let mut missing = state.snapshot.clone();
     if let Some(wave) = missing.waves.last_mut() {
         (wave.height, wave.period, wave.direction) = (None, None, None);
+        wave.temperature = None;
     }
     if let Some(wind) = missing.wind.as_mut() {
         (wind.speed, wind.direction, wind.gust) = (None, None, None);

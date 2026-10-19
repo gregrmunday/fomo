@@ -247,6 +247,12 @@ pub fn travel_vector(degrees: f64) -> (f64, f64) {
     let radians = (degrees + 180.0).to_radians();
     (radians.sin(), radians.cos())
 }
+// Sea surface temperature, always in °C.
+pub fn temperature_text(value: Option<f64>) -> String {
+    value
+        .map(|t| format!("{t:.1}°C"))
+        .unwrap_or_else(|| "—°C".into())
+}
 pub fn direction_text(value: Option<f64>) -> String {
     value
         .map(|d| format!("{:.1}° {}", d.rem_euclid(360.0), compass(d)))
@@ -334,6 +340,8 @@ mod tests {
         assert_eq!(config.wind_text(Some(10.0)), "19kn");
         assert_eq!(config.wind_text(Some(0.0)), "0kn");
         assert_eq!(config.wind_text(None), "—kn");
+        assert_eq!(temperature_text(Some(16.55)), "16.6°C");
+        assert_eq!(temperature_text(None), "—°C");
         assert_eq!(
             distance_km(
                 Spot::Porthleven.coordinates(),
