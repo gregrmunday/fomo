@@ -79,6 +79,34 @@ Still to check by hand, because they need a real session:
 
 `dist/Fomo.app` has not been rebuilt. Run `./scripts/build-app.sh` after quitting any running copy, because replacing a running signed binary can crash it. `dist/previews` was regenerated from the final tree.
 
+## Distribution plan (started 2026-10-19)
+
+Goal: friends with MacBooks run `brew install gregrmunday/tap/fomo` and get a working app, forecasts included.
+
+Decisions made by the user:
+
+- **Forecasts are computed once and published.** A scheduled GitHub Action in a new **private** repo `gregrmunday/fomo-forecast` runs the worker on CPU and publishes `fomo-v2.json` to the `forecast` branch of the public app repo. Apps download it from `https://raw.githubusercontent.com/gregrmunday/fomo/forecast/fomo-v2.json`. Nobody else installs Python or PyTorch.
+- **The app is built from source by a Homebrew formula** in the public tap `gregrmunday/homebrew-tap`. Building locally avoids Gatekeeper warnings without an Apple Developer ID. Launch at login is `brew services start fomo`.
+- **Public:** `gregrmunday/fomo` and `gregrmunday/homebrew-tap`. **Private:** `gregrmunday/fomo-forecast`, which holds a snapshot of the inference code and the current model.
+- The research project at `~/Documents/BuoyData/deepwater-models` stays untouched; do not push it anywhere. `fomo-forecast` holds the only published copy of its inference code.
+
+Facts behind the plan:
+
+- The live forecast path uses Open-Meteo (no key) and the Coastal Monitoring API. It fetches 96 h of buoy history every run, so observations need no persistent state. ECMWF credentials and eccodes are only for training archives.
+- The worker supports `--device cpu`. The model is 3.2 MB and the code about 0.5 MB.
+- `artifacts/latest-moe.json` holds an absolute path. The snapshot rewrites it as relative, and the job runs from the repo root.
+- `swell_panel` reads earlier forecasts from `forecasts/archive/` next to the output, so the Action carries that archive between runs in its cache.
+
+Still open for the user: the app ships Coastal Monitoring's published development key. Before wide sharing, request a personal key.
+
+| # | Item | Status |
+| --- | --- | --- |
+| D1 | App downloads the published forecast when no local worker exists; auto-refresh after `refresh_after_utc`; Credits show forecast data attribution | todo |
+| D2 | App release prep: `--version`, version 0.2.0, bundle id, LICENSE, README install section | todo |
+| D3 | `fomo-forecast` repo: inference snapshot, requirements, sync script, scheduled workflow; tested in a clean local venv | todo |
+| D4 | `homebrew-tap` repo: `Formula/fomo.rb`; tested with a local tarball | todo |
+| D5 | Publish, after the user's go-ahead: create repos, push, tag v0.2.0, deploy key, first workflow run, install from GitHub | todo |
+
 ## Work log
 
 Review findings from 2026-10-19, worked through in order. Status is `todo`, `in progress (<agent>)`, `done`, or `dropped (<reason>)`.
