@@ -108,6 +108,10 @@ All 18 review items below are done, with one commit each; tests went from 9 to 2
 
 ## Work log
 
+### Energy audit (2026-10-19)
+
+- **E1 Battery drain investigation.** Status: done. Codex measured the running local 0.1.0 build (PID 4024) at 58–59% CPU, with about 40 minutes of CPU time after an hour. A three-second stack sample showed repeated AppKit status-item replicant snapshots, layer drawing and appearance changes. Switching from all five readings to Compact dropped Fomo to 0.0% CPU and MenuBarAgent from about 14% to 0.8%. The expanded custom status view is the confirmed trigger; the exact AppKit invalidation cycle still needs isolating. Compact is the current workaround. The current source retains this view hierarchy in `src/ui/status.rs` and `Delegate::update_status`; a fix should preserve the expanded layout while avoiding repeated snapshot invalidation. No application code changed. Smaller opportunities: avoid rebuilding hidden popover pages and unchanged status views on refresh; skip forecast hover redraws when the selected hour is unchanged. Local GPU forecast refresh is expensive but manual, and no worker was running during the measurement. Fomo held no sleep assertion.
+
 Review findings from 2026-10-19, worked through in order. Status is `todo`, `in progress (<agent>)`, `done`, or `dropped (<reason>)`.
 
 ### Hygiene
