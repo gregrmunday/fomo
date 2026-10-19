@@ -1,8 +1,8 @@
 mod data;
-mod model;
 mod forecast;
 #[cfg(target_os = "macos")]
 mod forecast_ui;
+mod model;
 
 #[cfg(target_os = "macos")]
 mod ui;
@@ -10,8 +10,15 @@ mod ui;
 fn main() {
     if std::env::args().any(|a| a == "--refresh-forecast") {
         match forecast::regenerate() {
-            Ok(bundle) => println!("GPU forecast refreshed: {} · {} buoys", bundle.model_version, bundle.forecasts.len()),
-            Err(error) => { eprintln!("{error}"); std::process::exit(1); }
+            Ok(bundle) => println!(
+                "GPU forecast refreshed: {} · {} buoys",
+                bundle.model_version,
+                bundle.forecasts.len()
+            ),
+            Err(error) => {
+                eprintln!("{error}");
+                std::process::exit(1);
+            }
         }
         return;
     }

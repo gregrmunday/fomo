@@ -1,5 +1,5 @@
-use crate::{data, model::*};
 use crate::forecast::{ForecastBundle, SwellPoint};
+use crate::{data, model::*};
 use chrono::Local;
 use objc2::{AnyThread, DefinedClass, MainThreadOnly, define_class, msg_send, sel};
 use objc2::{
@@ -229,7 +229,11 @@ impl Delegate {
                 about: false,
                 demo,
                 save_error: None,
-                forecast: if demo { None } else { crate::forecast::load_local().ok() },
+                forecast: if demo {
+                    None
+                } else {
+                    crate::forecast::load_local().ok()
+                },
                 forecast_error: None,
                 forecast_loading: false,
                 forecast_page: false,
@@ -343,7 +347,9 @@ impl Delegate {
             result.wind_history = state.snapshot.wind_history.clone();
         }
         state.snapshot = result;
-        if let Ok(bundle)=crate::forecast::load_local() {state.forecast=Some(bundle);}
+        if let Ok(bundle) = crate::forecast::load_local() {
+            state.forecast = Some(bundle);
+        }
         state.loading = false;
         if let Err(error) = state.snapshot.save(state.config.spot) {
             state.save_error = Some(error);
@@ -354,7 +360,9 @@ impl Delegate {
 
     fn refresh_forecast(&self) {
         let mut state = self.ivars().state.borrow_mut();
-        if state.demo || state.forecast_loading { return; }
+        if state.demo || state.forecast_loading {
+            return;
+        }
         state.forecast_loading = true;
         state.forecast_error = None;
         state.forecast_generation += 1;
@@ -364,17 +372,21 @@ impl Delegate {
         std::thread::spawn(move || {
             let result = crate::forecast::regenerate();
             dispatch2::DispatchQueue::main().exec_async(move || {
-                APP.with(|app| { if let Some(app) = app.get() {
-                    let mut state = app.ivars().state.borrow_mut();
-                    if state.forecast_generation != generation { return; }
-                    state.forecast_loading = false;
-                    match result {
-                        Ok(bundle) => state.forecast = Some(bundle),
-                        Err(error) => state.forecast_error = Some(error),
+                APP.with(|app| {
+                    if let Some(app) = app.get() {
+                        let mut state = app.ivars().state.borrow_mut();
+                        if state.forecast_generation != generation {
+                            return;
+                        }
+                        state.forecast_loading = false;
+                        match result {
+                            Ok(bundle) => state.forecast = Some(bundle),
+                            Err(error) => state.forecast_error = Some(error),
+                        }
+                        drop(state);
+                        app.render();
                     }
-                    drop(state);
-                    app.render();
-                }});
+                });
             });
         });
     }
@@ -438,8 +450,15 @@ impl Delegate {
             return;
         }
         let root: Retained<NSView> = if state.forecast_page {
-            crate::forecast_ui::view(self.mtm(), self, &state.config, state.forecast.as_ref(),
-                state.forecast_loading, state.forecast_error.as_deref(), state.demo)
+            crate::forecast_ui::view(
+                self.mtm(),
+                self,
+                &state.config,
+                state.forecast.as_ref(),
+                state.forecast_loading,
+                state.forecast_error.as_deref(),
+                state.demo,
+            )
         } else if state.settings {
             self.settings_view(&state).into_super()
         } else if state.about {
@@ -461,7 +480,12 @@ impl Delegate {
 
     fn dashboard(&self, state: &State) -> Retained<Dashboard> {
         let mtm = self.mtm();
-        let root = Dashboard::new(mtm, state.snapshot.clone(), state.config.clone(), state.forecast.as_ref());
+        let root = Dashboard::new(
+            mtm,
+            state.snapshot.clone(),
+            state.config.clone(),
+            state.forecast.as_ref(),
+        );
         let wave = state.snapshot.latest();
         let wind = state.snapshot.wind.as_ref();
         let config = &state.config;
@@ -493,7 +517,16 @@ impl Delegate {
             0.4,
             &muted(),
         );
-        button(&root, self, "Forecast", sel!(forecast:), 209.0, 16.0, 78.0, 28.0);
+        button(
+            &root,
+            self,
+            "Forecast",
+            sel!(forecast:),
+            209.0,
+            16.0,
+            78.0,
+            28.0,
+        );
         let settings = button(
             &root,
             self,
@@ -661,8 +694,30 @@ impl Delegate {
             .iter()
             .filter_map(|w| w.height)
             .collect();
-        label(&root, mtm, "● Buoy", 224.0, 323.0, 66.0, 17.0, 9.0, 0.0, &rgb(0.03,0.56,0.64));
-        label(&root, mtm, "● Model", 294.0, 323.0, 64.0, 17.0, 9.0, 0.0, &rgb(0.57,0.32,0.79));
+        label(
+            &root,
+            mtm,
+            "● Buoy",
+            224.0,
+            323.0,
+            66.0,
+            17.0,
+            9.0,
+            0.0,
+            &rgb(0.03, 0.56, 0.64),
+        );
+        label(
+            &root,
+            mtm,
+            "● Model",
+            294.0,
+            323.0,
+            64.0,
+            17.0,
+            9.0,
+            0.0,
+            &rgb(0.57, 0.32, 0.79),
+        );
         if values.len() < 2 && root.ivars().charts[0].predictions.is_empty() {
             label(
                 &root,
@@ -678,8 +733,18 @@ impl Delegate {
             );
         }
         let now = chrono::Utc::now();
-        let first = format!("{} · −12h", (now - chrono::Duration::hours(12)).with_timezone(&Local).format("%H:%M"));
-        let last = format!("+12h · {}", (now + chrono::Duration::hours(12)).with_timezone(&Local).format("%H:%M"));
+        let first = format!(
+            "{} · −12h",
+            (now - chrono::Duration::hours(12))
+                .with_timezone(&Local)
+                .format("%H:%M")
+        );
+        let last = format!(
+            "+12h · {}",
+            (now + chrono::Duration::hours(12))
+                .with_timezone(&Local)
+                .format("%H:%M")
+        );
         label(
             &root,
             mtm,
@@ -705,15 +770,43 @@ impl Delegate {
             &muted(),
         );
         last_label.setAlignment(NSTextAlignment::Right);
-        let now_label = label(&root, mtm, "Now", 164.0, 419.0, 52.0, 16.0, 9.0, 0.4, &muted());
+        let now_label = label(
+            &root,
+            mtm,
+            "Now",
+            164.0,
+            419.0,
+            52.0,
+            16.0,
+            9.0,
+            0.4,
+            &muted(),
+        );
         now_label.setAlignment(NSTextAlignment::Center);
         let wave_chart = &root.ivars().charts[0];
-        let reconstruction = wave_chart.predictions.iter().any(|p| p.origin == "reconstructed");
+        let reconstruction = wave_chart
+            .predictions
+            .iter()
+            .any(|p| p.origin == "reconstructed");
         let note = if wave_chart.predictions.is_empty() {
             "Refresh forecast to add your network predictions."
-        } else if reconstruction { "Dashed past = reconstructed · shading = model 80% range" }
-        else { "Past model = saved forecasts · shading = model 80% range" };
-        let note_label = label(&root, mtm, note, 22.0, 437.0, 336.0, 11.0, 8.0, 0.0, &muted());
+        } else if reconstruction {
+            "Dashed past = reconstructed · shading = model 80% range"
+        } else {
+            "Past model = saved forecasts · shading = model 80% range"
+        };
+        let note_label = label(
+            &root,
+            mtm,
+            note,
+            22.0,
+            437.0,
+            336.0,
+            11.0,
+            8.0,
+            0.0,
+            &muted(),
+        );
         let explanation = state.forecast.as_ref().and_then(|b| b.swell_panel.as_ref()).and_then(|p|p.warning.as_deref())
             .unwrap_or("Past dashed predictions were reconstructed using earlier model runs and earlier buoy readings. They were not recorded forecasts at the time. Solid past model lines were saved before their valid time. Hover to inspect values and issue times.");
         note_label.setToolTip(Some(&NSString::from_str(explanation)));
@@ -1476,16 +1569,28 @@ impl HistoryChart {
             points: Vec::new(),
             plot,
             predictions: Vec::new(),
-            start: chrono::Utc::now(), end: chrono::Utc::now(), low: 0.0, high: 1.0,
+            start: chrono::Utc::now(),
+            end: chrono::Utc::now(),
+            low: 0.0,
+            high: 1.0,
         };
         let Some(end) = end else {
             return chart;
         };
-        let duration = if kind == HistoryKind::Waves { 24.0 } else { 12.0 };
+        let duration = if kind == HistoryKind::Waves {
+            24.0
+        } else {
+            12.0
+        };
         let start = end - chrono::Duration::hours(duration as i64);
-        chart.start = start; chart.end = end;
+        chart.start = start;
+        chart.end = end;
         if kind == HistoryKind::Waves {
-            chart.predictions = predictions.iter().filter(|p|p.valid_at_utc >= start && p.valid_at_utc <= end).cloned().collect();
+            chart.predictions = predictions
+                .iter()
+                .filter(|p| p.valid_at_utc >= start && p.valid_at_utc <= end)
+                .cloned()
+                .collect();
         }
         let values: Vec<_> = samples
             .into_iter()
@@ -1497,11 +1602,27 @@ impl HistoryChart {
         } else {
             0.5
         };
-        let low = (values.iter().map(|p| p.2).chain(chart.predictions.iter().map(|p|p.hs_m.p10)).fold(f64::INFINITY, f64::min) - padding).max(0.0);
-        let high = values.iter().map(|p| p.2).chain(chart.predictions.iter().map(|p|p.hs_m.p90)).fold(f64::NEG_INFINITY, f64::max) + padding;
+        let low = (values
+            .iter()
+            .map(|p| p.2)
+            .chain(chart.predictions.iter().map(|p| p.hs_m.p10))
+            .fold(f64::INFINITY, f64::min)
+            - padding)
+            .max(0.0);
+        let high = values
+            .iter()
+            .map(|p| p.2)
+            .chain(chart.predictions.iter().map(|p| p.hs_m.p90))
+            .fold(f64::NEG_INFINITY, f64::max)
+            + padding;
         chart.low = if low.is_finite() { low } else { 0.0 };
-        chart.high = if high.is_finite() { high.max(chart.low+0.1) } else { 1.0 };
-        let low = chart.low; let high = chart.high;
+        chart.high = if high.is_finite() {
+            high.max(chart.low + 0.1)
+        } else {
+            1.0
+        };
+        let low = chart.low;
+        let high = chart.high;
         chart.points = values
             .into_iter()
             .map(|(sample_index, time, value)| ChartPoint {
@@ -1510,22 +1631,33 @@ impl HistoryChart {
                 model_index: None,
                 position: NSPoint::new(
                     plot.origin.x
-                        + (time - start).num_seconds() as f64 / (duration * 3600.0) * plot.size.width,
+                        + (time - start).num_seconds() as f64 / (duration * 3600.0)
+                            * plot.size.width,
                     plot.origin.y + (value - low) / (high - low) * plot.size.height,
                 ),
             })
             .collect();
         for (index, prediction) in chart.predictions.iter().enumerate() {
-            chart.points.push(ChartPoint { sample_index: index, time: prediction.valid_at_utc,
-                position: chart.position(prediction.valid_at_utc, prediction.hs_m.p50), model_index: Some(index) });
+            chart.points.push(ChartPoint {
+                sample_index: index,
+                time: prediction.valid_at_utc,
+                position: chart.position(prediction.valid_at_utc, prediction.hs_m.p50),
+                model_index: Some(index),
+            });
         }
-        chart.points.sort_by_key(|p|p.time);
+        chart.points.sort_by_key(|p| p.time);
         chart
     }
 
     fn position(&self, time: chrono::DateTime<chrono::Utc>, value: f64) -> NSPoint {
-        NSPoint::new(self.plot.origin.x + (time-self.start).num_seconds() as f64 / (self.end-self.start).num_seconds() as f64 * self.plot.size.width,
-            self.plot.origin.y + (value-self.low)/(self.high-self.low)*self.plot.size.height)
+        NSPoint::new(
+            self.plot.origin.x
+                + (time - self.start).num_seconds() as f64
+                    / (self.end - self.start).num_seconds() as f64
+                    * self.plot.size.width,
+            self.plot.origin.y
+                + (value - self.low) / (self.high - self.low) * self.plot.size.height,
+        )
     }
 
     fn tracking_rect(&self) -> NSRect {
@@ -1556,26 +1688,42 @@ impl HistoryChart {
             line.stroke();
         }
         if self.kind == HistoryKind::Waves {
-            let x = self.plot.origin.x + self.plot.size.width/2.0;
+            let x = self.plot.origin.x + self.plot.size.width / 2.0;
             let now = NSBezierPath::new();
-            now.moveToPoint(NSPoint::new(x,self.plot.origin.y)); now.lineToPoint(NSPoint::new(x,self.plot.origin.y+self.plot.size.height));
-            NSColor::tertiaryLabelColor().setStroke(); now.setLineWidth(0.8); now.stroke();
+            now.moveToPoint(NSPoint::new(x, self.plot.origin.y));
+            now.lineToPoint(NSPoint::new(x, self.plot.origin.y + self.plot.size.height));
+            NSColor::tertiaryLabelColor().setStroke();
+            now.setLineWidth(0.8);
+            now.stroke();
             for pair in self.predictions.windows(2) {
-                let a=&pair[0]; let b=&pair[1];
-                if b.valid_at_utc-a.valid_at_utc > chrono::Duration::minutes(90) {continue;}
-                let band=NSBezierPath::new();
-                band.moveToPoint(self.position(a.valid_at_utc,a.hs_m.p10));
-                band.lineToPoint(self.position(b.valid_at_utc,b.hs_m.p10));
-                band.lineToPoint(self.position(b.valid_at_utc,b.hs_m.p90));
-                band.lineToPoint(self.position(a.valid_at_utc,a.hs_m.p90)); band.closePath();
-                NSColor::colorWithCalibratedRed_green_blue_alpha(0.57,0.32,0.79,0.12).setFill(); band.fill();
-                let line=NSBezierPath::new();
-                let from=self.position(a.valid_at_utc,a.hs_m.p50); let to=self.position(b.valid_at_utc,b.hs_m.p50);
+                let a = &pair[0];
+                let b = &pair[1];
+                if b.valid_at_utc - a.valid_at_utc > chrono::Duration::minutes(90) {
+                    continue;
+                }
+                let band = NSBezierPath::new();
+                band.moveToPoint(self.position(a.valid_at_utc, a.hs_m.p10));
+                band.lineToPoint(self.position(b.valid_at_utc, b.hs_m.p10));
+                band.lineToPoint(self.position(b.valid_at_utc, b.hs_m.p90));
+                band.lineToPoint(self.position(a.valid_at_utc, a.hs_m.p90));
+                band.closePath();
+                NSColor::colorWithCalibratedRed_green_blue_alpha(0.57, 0.32, 0.79, 0.12).setFill();
+                band.fill();
+                let line = NSBezierPath::new();
+                let from = self.position(a.valid_at_utc, a.hs_m.p50);
+                let to = self.position(b.valid_at_utc, b.hs_m.p50);
                 line.moveToPoint(from);
                 if a.origin == "reconstructed" {
-                    line.lineToPoint(NSPoint::new(from.x+(to.x-from.x)*0.55,from.y+(to.y-from.y)*0.55));
-                } else { line.lineToPoint(to); }
-                rgb(0.57,0.32,0.79).setStroke();line.setLineWidth(2.0);line.stroke();
+                    line.lineToPoint(NSPoint::new(
+                        from.x + (to.x - from.x) * 0.55,
+                        from.y + (to.y - from.y) * 0.55,
+                    ));
+                } else {
+                    line.lineToPoint(to);
+                }
+                rgb(0.57, 0.32, 0.79).setStroke();
+                line.setLineWidth(2.0);
+                line.stroke();
             }
         }
         let path = NSBezierPath::new();
@@ -1585,7 +1733,7 @@ impl HistoryChart {
         } else {
             20
         };
-        for point in self.points.iter().filter(|p|p.model_index.is_none()) {
+        for point in self.points.iter().filter(|p| p.model_index.is_none()) {
             let connected = previous.is_some_and(|old| {
                 point.sample_index == old.sample_index + 1
                     && (point.time - old.time).num_minutes() <= max_gap
@@ -1600,7 +1748,7 @@ impl HistoryChart {
         self.color().setStroke();
         path.setLineWidth(2.5);
         path.stroke();
-        if let Some(point) = self.points.iter().rev().find(|p|p.model_index.is_none()) {
+        if let Some(point) = self.points.iter().rev().find(|p| p.model_index.is_none()) {
             self.draw_dot(point.position, 3.5);
         }
     }
@@ -1695,7 +1843,12 @@ define_class!(
 );
 
 impl Dashboard {
-    fn new(mtm: MainThreadMarker, snapshot: Snapshot, config: Config, forecast: Option<&ForecastBundle>) -> Retained<Self> {
+    fn new(
+        mtm: MainThreadMarker,
+        snapshot: Snapshot,
+        config: Config,
+        forecast: Option<&ForecastBundle>,
+    ) -> Retained<Self> {
         let view = Self::make(mtm, snapshot, config, 100, forecast);
         let label = NSTextField::wrappingLabelWithString(&NSString::from_str(""), mtm);
         label.setFont(Some(&NSFont::monospacedDigitSystemFontOfSize_weight(
@@ -1733,21 +1886,37 @@ impl Dashboard {
         forecast: Option<&ForecastBundle>,
     ) -> Retained<Self> {
         let mut predictions = std::collections::BTreeMap::new();
-        if let Some(bundle)=forecast {
-            if let Some(series)=bundle.swell_panel.as_ref().and_then(|p|p.forecasts.iter().find(|s|s.station_id==config.spot.id())) {
-                for point in &series.points {predictions.insert(point.valid_at_utc,point.clone());}
+        if let Some(bundle) = forecast {
+            if let Some(series) = bundle.swell_panel.as_ref().and_then(|p| {
+                p.forecasts
+                    .iter()
+                    .find(|s| s.station_id == config.spot.id())
+            }) {
+                for point in &series.points {
+                    predictions.insert(point.valid_at_utc, point.clone());
+                }
             }
-            if let Some(series)=bundle.for_station(config.spot.id()) {
+            if let Some(series) = bundle.for_station(config.spot.id()) {
                 for point in &series.points {
                     if bundle.generated_at_utc <= point.valid_at_utc {
-                        predictions.insert(point.valid_at_utc,SwellPoint {valid_at_utc:point.valid_at_utc, hs_m:point.hs_m.clone(),tp_s:point.tp_s.clone(),
-                            direction:point.direction.clone(),issued_at_utc:bundle.issued_at_utc,generated_at_utc:bundle.generated_at_utc,
-                            model_version:bundle.model_version.clone(),origin:"forecast".into()});
+                        predictions.insert(
+                            point.valid_at_utc,
+                            SwellPoint {
+                                valid_at_utc: point.valid_at_utc,
+                                hs_m: point.hs_m.clone(),
+                                tp_s: point.tp_s.clone(),
+                                direction: point.direction.clone(),
+                                issued_at_utc: bundle.issued_at_utc,
+                                generated_at_utc: bundle.generated_at_utc,
+                                model_version: bundle.model_version.clone(),
+                                origin: "forecast".into(),
+                            },
+                        );
                     }
                 }
             }
         }
-        let predictions:Vec<_>=predictions.into_values().collect();
+        let predictions: Vec<_> = predictions.into_values().collect();
         let charts = vec![
             HistoryChart::new(&snapshot, HistoryKind::Waves, &predictions),
             HistoryChart::new(&snapshot, HistoryKind::Wind, &[]),
@@ -1785,7 +1954,10 @@ impl Dashboard {
                     .iter()
                     .enumerate()
                     .min_by(|(_, a), (_, b)| {
-                        let distance = |p:&ChartPoint| (p.position.x-location.x).abs() + (p.position.y-location.y).abs()*0.2;
+                        let distance = |p: &ChartPoint| {
+                            (p.position.x - location.x).abs()
+                                + (p.position.y - location.y).abs() * 0.2
+                        };
                         distance(a).total_cmp(&distance(b))
                     })
                     .filter(|(_, p)| (p.position.x - location.x).abs() <= 9.0)
@@ -1805,19 +1977,41 @@ impl Dashboard {
                 let config = &self.ivars().config;
                 let value = match chart.kind {
                     HistoryKind::Waves => {
-                        if let Some(index)=point.model_index {
-                            let p=&chart.predictions[index];
-                            format!("{} · {} {} ({:.1}–{:.1}{})\nTp {:.1}s · {} {:.0}°\nIssued {} · {}",
+                        if let Some(index) = point.model_index {
+                            let p = &chart.predictions[index];
+                            format!(
+                                "{} · {} {} ({:.1}–{:.1}{})\nTp {:.1}s · {} {:.0}°\nIssued {} · {}",
                                 p.valid_at_utc.with_timezone(&Local).format("%H:%M"),
-                                if p.origin=="reconstructed" {"Reconstructed"} else {"Model"},config.height_text(Some(p.hs_m.p50)),
-                                config.height(p.hs_m.p10),config.height(p.hs_m.p90),config.height_unit(),p.tp_s.p50,
-                                compass(p.direction.from_deg),p.direction.from_deg,p.issued_at_utc.with_timezone(&Local).format("%d %b %H:%M"),
-                                if p.origin=="reconstructed" {"not saved at the time"} else {"saved forecast"})
+                                if p.origin == "reconstructed" {
+                                    "Reconstructed"
+                                } else {
+                                    "Model"
+                                },
+                                config.height_text(Some(p.hs_m.p50)),
+                                config.height(p.hs_m.p10),
+                                config.height(p.hs_m.p90),
+                                config.height_unit(),
+                                p.tp_s.p50,
+                                compass(p.direction.from_deg),
+                                p.direction.from_deg,
+                                p.issued_at_utc.with_timezone(&Local).format("%d %b %H:%M"),
+                                if p.origin == "reconstructed" {
+                                    "not saved at the time"
+                                } else {
+                                    "saved forecast"
+                                }
+                            )
                         } else {
-                            let wave=&self.ivars().snapshot.waves[point.sample_index];
-                            format!("{} · Buoy {}\nTp {} · {}",
-                                wave.time.with_timezone(&Local).format("%H:%M"),config.height_text(wave.height),
-                                wave.period.map(|p|format!("{p:.1}s")).unwrap_or("—".into()),direction_text(wave.direction))
+                            let wave = &self.ivars().snapshot.waves[point.sample_index];
+                            format!(
+                                "{} · Buoy {}\nTp {} · {}",
+                                wave.time.with_timezone(&Local).format("%H:%M"),
+                                config.height_text(wave.height),
+                                wave.period
+                                    .map(|p| format!("{p:.1}s"))
+                                    .unwrap_or("—".into()),
+                                direction_text(wave.direction)
+                            )
                         }
                     }
                     HistoryKind::Wind => {
@@ -1841,7 +2035,17 @@ impl Dashboard {
                     }
                 };
                 label.setStringValue(&NSString::from_str(&value));
-                label.setToolTip(point.model_index.map(|index|NSString::from_str(&format!("Model {}",chart.predictions[index].model_version))).as_deref());
+                label.setToolTip(
+                    point
+                        .model_index
+                        .map(|index| {
+                            NSString::from_str(&format!(
+                                "Model {}",
+                                chart.predictions[index].model_version
+                            ))
+                        })
+                        .as_deref(),
+                );
                 let mut rect = chart.bubble(point.position);
                 rect.origin.y += 3.0;
                 rect.size.height -= 5.0;
@@ -2006,8 +2210,12 @@ pub fn run() {
     let mtm = MainThreadMarker::new().expect("Fomo must launch on the main thread");
     let app = NSApplication::sharedApplication(mtm);
     app.setActivationPolicy(NSApplicationActivationPolicy::Accessory);
-    if let Some(dir)=std::env::args().skip_while(|a|a!="--render-swell-preview").nth(1) {
-        render_swell_previews(mtm,&dir);return;
+    if let Some(dir) = std::env::args()
+        .skip_while(|a| a != "--render-swell-preview")
+        .nth(1)
+    {
+        render_swell_previews(mtm, &dir);
+        return;
     }
     if let Some(dir) = std::env::args()
         .skip_while(|a| a != "--render-preview")
@@ -2024,22 +2232,60 @@ pub fn run() {
     app.run();
 }
 
-fn render_swell_previews(mtm:MainThreadMarker,dir:&str) {
+fn render_swell_previews(mtm: MainThreadMarker, dir: &str) {
     std::fs::create_dir_all(dir).expect("create swell preview directory");
-    let delegate=Delegate::new(mtm);
-    for spot in [Spot::Perranporth,Spot::Porthleven] {
-        let config=Config{spot,..Config::default()};
-        let snapshot_path=std::path::Path::new(dir).join(format!("snapshot-{}.json",spot.id()));
-        let snapshot:Snapshot=serde_json::from_slice(&std::fs::read(snapshot_path).expect("saved live preview observations")).expect("parse live observations");
-        let state=State {snapshot,config,generation:0,loading:false,settings:false,about:false,demo:false,save_error:None,
-            forecast:crate::forecast::load_local().ok(),forecast_error:None,forecast_loading:false,forecast_page:false,forecast_generation:0};
-        for (theme,name) in unsafe {[("light",NSAppearanceNameAqua),("dark",NSAppearanceNameDarkAqua)]} {
-            let appearance=NSAppearance::appearanceNamed(name).expect("system appearance");
-            let view=delegate.dashboard(&state);
-            write_preview(mtm,&view,&appearance,&format!("{dir}/swell-{}-{theme}.png",spot.id()));
-            if let Some(point)=view.ivars().charts[0].points.iter().find(|p|p.model_index.is_some() && p.time>chrono::Utc::now()) {
+    let delegate = Delegate::new(mtm);
+    for spot in [Spot::Perranporth, Spot::Porthleven] {
+        let config = Config {
+            spot,
+            ..Config::default()
+        };
+        let snapshot_path = std::path::Path::new(dir).join(format!("snapshot-{}.json", spot.id()));
+        let snapshot: Snapshot = serde_json::from_slice(
+            &std::fs::read(snapshot_path).expect("saved live preview observations"),
+        )
+        .expect("parse live observations");
+        let state = State {
+            snapshot,
+            config,
+            generation: 0,
+            loading: false,
+            settings: false,
+            about: false,
+            demo: false,
+            save_error: None,
+            forecast: crate::forecast::load_local().ok(),
+            forecast_error: None,
+            forecast_loading: false,
+            forecast_page: false,
+            forecast_generation: 0,
+        };
+        for (theme, name) in unsafe {
+            [
+                ("light", NSAppearanceNameAqua),
+                ("dark", NSAppearanceNameDarkAqua),
+            ]
+        } {
+            let appearance = NSAppearance::appearanceNamed(name).expect("system appearance");
+            let view = delegate.dashboard(&state);
+            write_preview(
+                mtm,
+                &view,
+                &appearance,
+                &format!("{dir}/swell-{}-{theme}.png", spot.id()),
+            );
+            if let Some(point) = view.ivars().charts[0]
+                .points
+                .iter()
+                .find(|p| p.model_index.is_some() && p.time > chrono::Utc::now())
+            {
                 view.hover_at(point.position);
-                write_preview(mtm,&view,&appearance,&format!("{dir}/swell-{}-hover-{theme}.png",spot.id()));
+                write_preview(
+                    mtm,
+                    &view,
+                    &appearance,
+                    &format!("{dir}/swell-{}-hover-{theme}.png", spot.id()),
+                );
             }
         }
     }
@@ -2113,8 +2359,21 @@ fn render_previews(mtm: MainThreadMarker, dir: &str) {
             assert!(view.ivars().hovered.get().is_none());
         }
         let forecast = crate::forecast::load_local().ok();
-        let forecast_view = crate::forecast_ui::view(mtm, &delegate, &state.config, forecast.as_ref(), false, None, false);
-        write_preview(mtm, &forecast_view, &appearance, &format!("{dir}/forecast-{theme}.png"));
+        let forecast_view = crate::forecast_ui::view(
+            mtm,
+            &delegate,
+            &state.config,
+            forecast.as_ref(),
+            false,
+            None,
+            false,
+        );
+        write_preview(
+            mtm,
+            &forecast_view,
+            &appearance,
+            &format!("{dir}/forecast-{theme}.png"),
+        );
         for height in [22.0, 24.0, 32.0] {
             let view = StatusReadings::new(mtm, &state, height);
             assert!(view.hitTest(NSPoint::new(40.0, 10.0)).is_none());

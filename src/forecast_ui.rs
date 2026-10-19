@@ -1,10 +1,12 @@
 use crate::{forecast::*, model::*};
 use chrono::Local;
-use objc2::{AnyThread, DefinedClass, MainThreadOnly, define_class, msg_send, sel};
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, Sel};
+use objc2::{AnyThread, DefinedClass, MainThreadOnly, define_class, msg_send, sel};
 use objc2_app_kit::*;
-use objc2_foundation::{MainThreadMarker, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString};
+use objc2_foundation::{
+    MainThreadMarker, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString,
+};
 use std::cell::{Cell, OnceCell};
 
 const HEIGHT: f64 = 744.0;
@@ -85,92 +87,335 @@ define_class!(
 );
 impl ForecastCanvas {
     fn new(mtm: MainThreadMarker, buoy: Option<BuoyForecast>, config: Config) -> Retained<Self> {
-        let this = Self::alloc(mtm).set_ivars(ForecastIvars { buoy, config, selected: Cell::new(0), readout: OnceCell::new() });
-        unsafe { msg_send![super(this), initWithFrame: NSRect::new(NSPoint::new(0.,0.),NSSize::new(380.,HEIGHT))] }
+        let this = Self::alloc(mtm).set_ivars(ForecastIvars {
+            buoy,
+            config,
+            selected: Cell::new(0),
+            readout: OnceCell::new(),
+        });
+        unsafe {
+            msg_send![super(this), initWithFrame: NSRect::new(NSPoint::new(0.,0.),NSSize::new(380.,HEIGHT))]
+        }
     }
     fn select_at(&self, point: NSPoint) {
-        let Some(buoy) = &self.ivars().buoy else { return; };
-        let from_top = HEIGHT-point.y;
-        if !(200.0..=620.0).contains(&from_top) { return; }
-        let index = (((point.x-LEFT)/WIDTH).clamp(0.,1.)*(buoy.points.len()-1) as f64).round() as usize;
+        let Some(buoy) = &self.ivars().buoy else {
+            return;
+        };
+        let from_top = HEIGHT - point.y;
+        if !(200.0..=620.0).contains(&from_top) {
+            return;
+        }
+        let index = (((point.x - LEFT) / WIDTH).clamp(0., 1.) * (buoy.points.len() - 1) as f64)
+            .round() as usize;
         self.ivars().selected.set(index);
         self.update_readout();
         self.setNeedsDisplay(true);
     }
     fn update_readout(&self) {
-        let Some(buoy) = &self.ivars().buoy else { return; };
-        let p = &buoy.points[self.ivars().selected.get().min(buoy.points.len()-1)];
+        let Some(buoy) = &self.ivars().buoy else {
+            return;
+        };
+        let p = &buoy.points[self.ivars().selected.get().min(buoy.points.len() - 1)];
         let config = &self.ivars().config;
         let d = &p.direction;
-        let text = format!("{} · {} {:.0}°\nHs {} ({:.1}–{:.1}{}) · Tp {:.1}s ({:.1}–{:.1}s)\nDirection range ±{:.0}°{}",
-            p.valid_at_utc.with_timezone(&Local).format("%a %d %b, %H:%M"),compass(d.from_deg),d.from_deg,
-            config.height_text(Some(p.hs_m.p50)),config.height(p.hs_m.p10),config.height(p.hs_m.p90),config.height_unit(),
-            p.tp_s.p50,p.tp_s.p10,p.tp_s.p90,d.interval80.half_width_deg,
-            if d.interval80.wraps_north { " · crosses north" } else if d.interval80.full_circle { " · all directions" } else { "" });
-        if let Some(label) = self.ivars().readout.get() { label.setStringValue(&NSString::from_str(&text)); }
+        let text = format!(
+            "{} · {} {:.0}°\nHs {} ({:.1}–{:.1}{}) · Tp {:.1}s ({:.1}–{:.1}s)\nDirection range ±{:.0}°{}",
+            p.valid_at_utc
+                .with_timezone(&Local)
+                .format("%a %d %b, %H:%M"),
+            compass(d.from_deg),
+            d.from_deg,
+            config.height_text(Some(p.hs_m.p50)),
+            config.height(p.hs_m.p10),
+            config.height(p.hs_m.p90),
+            config.height_unit(),
+            p.tp_s.p50,
+            p.tp_s.p10,
+            p.tp_s.p90,
+            d.interval80.half_width_deg,
+            if d.interval80.wraps_north {
+                " · crosses north"
+            } else if d.interval80.full_circle {
+                " · all directions"
+            } else {
+                ""
+            }
+        );
+        if let Some(label) = self.ivars().readout.get() {
+            label.setStringValue(&NSString::from_str(&text));
+        }
     }
 }
-fn rect(x:f64,y:f64,w:f64,h:f64)->NSRect { NSRect::new(NSPoint::new(x,HEIGHT-y-h),NSSize::new(w,h)) }
-fn teal()->Retained<NSColor> { NSColor::colorWithCalibratedRed_green_blue_alpha(0.03,0.56,0.60,1.0) }
-fn text(parent:&NSView,mtm:MainThreadMarker,value:&str,x:f64,y:f64,w:f64,h:f64,size:f64)->Retained<NSTextField> {
-    let label = NSTextField::wrappingLabelWithString(&NSString::from_str(value),mtm);
-    label.setFrame(rect(x,y,w,h)); label.setFont(Some(&NSFont::systemFontOfSize(size)));
-    label.setTextColor(Some(&NSColor::labelColor())); parent.addSubview(&label); label
+fn rect(x: f64, y: f64, w: f64, h: f64) -> NSRect {
+    NSRect::new(NSPoint::new(x, HEIGHT - y - h), NSSize::new(w, h))
 }
-fn button(parent:&NSView,mtm:MainThreadMarker,target:&AnyObject,title:&str,action:Sel,x:f64,y:f64,w:f64)->Retained<NSButton> {
-    let b = unsafe { NSButton::buttonWithTitle_target_action(&NSString::from_str(title),Some(target),Some(action),mtm) };
-    b.setFrame(rect(x,y,w,28.)); b.setBezelStyle(NSBezelStyle::Push); b.setBordered(false);
-    b.setFont(Some(&NSFont::systemFontOfSize(11.))); parent.addSubview(&b); b
+fn teal() -> Retained<NSColor> {
+    NSColor::colorWithCalibratedRed_green_blue_alpha(0.03, 0.56, 0.60, 1.0)
 }
-pub fn view(mtm:MainThreadMarker,target:&AnyObject,config:&Config,bundle:Option<&ForecastBundle>,loading:bool,error:Option<&str>,demo:bool)->Retained<NSView> {
-    let buoy = bundle.and_then(|b| b.for_station(config.spot.id())).cloned();
-    let view = ForecastCanvas::new(mtm,buoy,config.clone());
-    text(&view,mtm,"F O M O   ·   FORECAST",22.,19.,336.,26.,14.);
-    let name=view.ivars().buoy.as_ref().map(|b|b.name.as_str()).unwrap_or(config.spot.name());
-    text(&view,mtm,&format!("{name} · next seven days"),22.,49.,336.,25.,20.);
-    button(&view,mtm,target,"‹ Observations",sel!(back:),17.,85.,112.);
-    let refresh = button(&view,mtm,target,if loading { "Updating on GPU…" } else { "↻ Refresh forecast" },sel!(refreshForecast:),207.,85.,151.);
+#[allow(clippy::too_many_arguments)]
+fn text(
+    parent: &NSView,
+    mtm: MainThreadMarker,
+    value: &str,
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+    size: f64,
+) -> Retained<NSTextField> {
+    let label = NSTextField::wrappingLabelWithString(&NSString::from_str(value), mtm);
+    label.setFrame(rect(x, y, w, h));
+    label.setFont(Some(&NSFont::systemFontOfSize(size)));
+    label.setTextColor(Some(&NSColor::labelColor()));
+    parent.addSubview(&label);
+    label
+}
+#[allow(clippy::too_many_arguments)]
+fn button(
+    parent: &NSView,
+    mtm: MainThreadMarker,
+    target: &AnyObject,
+    title: &str,
+    action: Sel,
+    x: f64,
+    y: f64,
+    w: f64,
+) -> Retained<NSButton> {
+    let b = unsafe {
+        NSButton::buttonWithTitle_target_action(
+            &NSString::from_str(title),
+            Some(target),
+            Some(action),
+            mtm,
+        )
+    };
+    b.setFrame(rect(x, y, w, 28.));
+    b.setBezelStyle(NSBezelStyle::Push);
+    b.setBordered(false);
+    b.setFont(Some(&NSFont::systemFontOfSize(11.)));
+    parent.addSubview(&b);
+    b
+}
+pub fn view(
+    mtm: MainThreadMarker,
+    target: &AnyObject,
+    config: &Config,
+    bundle: Option<&ForecastBundle>,
+    loading: bool,
+    error: Option<&str>,
+    demo: bool,
+) -> Retained<NSView> {
+    let buoy = bundle
+        .and_then(|b| b.for_station(config.spot.id()))
+        .cloned();
+    let view = ForecastCanvas::new(mtm, buoy, config.clone());
+    text(
+        &view,
+        mtm,
+        "F O M O   ·   FORECAST",
+        22.,
+        19.,
+        336.,
+        26.,
+        14.,
+    );
+    let name = view
+        .ivars()
+        .buoy
+        .as_ref()
+        .map(|b| b.name.as_str())
+        .unwrap_or(config.spot.name());
+    text(
+        &view,
+        mtm,
+        &format!("{name} · next seven days"),
+        22.,
+        49.,
+        336.,
+        25.,
+        20.,
+    );
+    button(
+        &view,
+        mtm,
+        target,
+        "‹ Observations",
+        sel!(back:),
+        17.,
+        85.,
+        112.,
+    );
+    let refresh = button(
+        &view,
+        mtm,
+        target,
+        if loading {
+            "Updating on GPU…"
+        } else {
+            "↻ Refresh forecast"
+        },
+        sel!(refreshForecast:),
+        207.,
+        85.,
+        151.,
+    );
     refresh.setEnabled(!loading && !demo);
-    refresh.setKeyEquivalent(&NSString::from_str("r")); refresh.setKeyEquivalentModifierMask(NSEventModifierFlags::Command);
-    let status = if loading { "Fetching model runs and buoy history · M3 GPU".into() }
-        else if let Some(error)=error { format!("Update failed: {error}") }
-        else if let Some(bundle)=bundle { format!("Issued {} · {}{}",bundle.issued_at_utc.with_timezone(&Local).format("%d %b %H:%M"),age_text(bundle.issued_at_utc),if bundle.is_stale(){" · delayed"}else{""}) }
-        else { "Refresh to generate your local GPU forecast".into() };
-    let status_label=text(&view,mtm,&status,22.,121.,336.,24.,10.);
+    refresh.setKeyEquivalent(&NSString::from_str("r"));
+    refresh.setKeyEquivalentModifierMask(NSEventModifierFlags::Command);
+    let status = if loading {
+        "Fetching model runs and buoy history · M3 GPU".into()
+    } else if let Some(error) = error {
+        format!("Update failed: {error}")
+    } else if let Some(bundle) = bundle {
+        format!(
+            "Issued {} · {}{}",
+            bundle
+                .issued_at_utc
+                .with_timezone(&Local)
+                .format("%d %b %H:%M"),
+            age_text(bundle.issued_at_utc),
+            if bundle.is_stale() { " · delayed" } else { "" }
+        )
+    } else {
+        "Refresh to generate your local GPU forecast".into()
+    };
+    let status_label = text(&view, mtm, &status, 22., 121., 336., 24., 10.);
     status_label.setToolTip(Some(&NSString::from_str(&status)));
-    if error.is_some() || bundle.is_some_and(|b|b.is_stale()) { status_label.setTextColor(Some(&NSColor::systemOrangeColor())); }
-    let readout=text(&view,mtm,"",22.,150.,336.,45.,10.);
-    let _=view.ivars().readout.set(readout); view.update_readout();
-    if let Some(buoy)=&view.ivars().buoy {
-        for (channel,top,title) in [(0,198.,"SIGNIFICANT HEIGHT Hs"),(1,364.,"PEAK PERIOD Tp")] {
-            text(&view,mtm,title,22.,top,270.,18.,10.);
-            let high=buoy.points.iter().map(|p|if channel==0 {config.height(p.hs_m.p90)}else{p.tp_s.p90}).fold(0.,f64::max).max(1.)*1.08;
-            text(&view,mtm,&format!("{high:.0}"),12.,top+19.,27.,16.,9.);
-            text(&view,mtm,"0",24.,top+115.,15.,16.,9.);
+    if error.is_some() || bundle.is_some_and(|b| b.is_stale()) {
+        status_label.setTextColor(Some(&NSColor::systemOrangeColor()));
+    }
+    let readout = text(&view, mtm, "", 22., 150., 336., 45., 10.);
+    let _ = view.ivars().readout.set(readout);
+    view.update_readout();
+    if let Some(buoy) = &view.ivars().buoy {
+        for (channel, top, title) in [
+            (0, 198., "SIGNIFICANT HEIGHT Hs"),
+            (1, 364., "PEAK PERIOD Tp"),
+        ] {
+            text(&view, mtm, title, 22., top, 270., 18., 10.);
+            let high = buoy
+                .points
+                .iter()
+                .map(|p| {
+                    if channel == 0 {
+                        config.height(p.hs_m.p90)
+                    } else {
+                        p.tp_s.p90
+                    }
+                })
+                .fold(0., f64::max)
+                .max(1.)
+                * 1.08;
+            text(
+                &view,
+                mtm,
+                &format!("{high:.0}"),
+                12.,
+                top + 19.,
+                27.,
+                16.,
+                9.,
+            );
+            text(&view, mtm, "0", 24., top + 115., 15., 16., 9.);
             for day in 0..7 {
-                let index=(day*24).min(buoy.points.len()-1);
-                let x=LEFT+index as f64/(buoy.points.len()-1)as f64*WIDTH-17.;
-                text(&view,mtm,&buoy.points[index].valid_at_utc.with_timezone(&Local).format("%a %d").to_string(),x,top+132.,48.,16.,8.);
+                let index = (day * 24).min(buoy.points.len() - 1);
+                let x = LEFT + index as f64 / (buoy.points.len() - 1) as f64 * WIDTH - 17.;
+                text(
+                    &view,
+                    mtm,
+                    &buoy.points[index]
+                        .valid_at_utc
+                        .with_timezone(&Local)
+                        .format("%a %d")
+                        .to_string(),
+                    x,
+                    top + 132.,
+                    48.,
+                    16.,
+                    8.,
+                );
             }
         }
-        text(&view,mtm,"PEAK DIRECTION · ARROWS SHOW TRAVEL",22.,541.,336.,18.,10.);
+        text(
+            &view,
+            mtm,
+            "PEAK DIRECTION · ARROWS SHOW TRAVEL",
+            22.,
+            541.,
+            336.,
+            18.,
+            10.,
+        );
         for day in 0..7 {
-            let index=(day*24).min(buoy.points.len()-1);
-            let x=LEFT+index as f64/(buoy.points.len()-1)as f64*WIDTH-13.;
-            text(&view,mtm,compass(buoy.points[index].direction.from_deg),x,601.,42.,16.,9.);
+            let index = (day * 24).min(buoy.points.len() - 1);
+            let x = LEFT + index as f64 / (buoy.points.len() - 1) as f64 * WIDTH - 13.;
+            text(
+                &view,
+                mtm,
+                compass(buoy.points[index].direction.from_deg),
+                x,
+                601.,
+                42.,
+                16.,
+                9.,
+            );
         }
-        text(&view,mtm,"Hover over the charts to inspect each hour.",22.,631.,336.,18.,10.);
-        let note_value=if buoy.status=="experimental" {
+        text(
+            &view,
+            mtm,
+            "Hover over the charts to inspect each hour.",
+            22.,
+            631.,
+            336.,
+            18.,
+            10.,
+        );
+        let note_value = if buoy.status == "experimental" {
             "Shading = nominal 80% range · direction = magnetic FROM\nExperimental: long-lead and winter coverage unverified."
-        } else { "Shading = nominal 80% range · direction = magnetic FROM" };
-        let note=text(&view,mtm,note_value,22.,658.,336.,38.,10.);
-        if let Some(bundle)=bundle { note.setToolTip(Some(&NSString::from_str(&bundle.warnings.join("\n")))); }
-        text(&view,mtm,"ECMWF WAM · GFS Wave",22.,709.,336.,18.,10.);
+        } else {
+            "Shading = nominal 80% range · direction = magnetic FROM"
+        };
+        let note = text(&view, mtm, note_value, 22., 658., 336., 38., 10.);
+        if let Some(bundle) = bundle {
+            note.setToolTip(Some(&NSString::from_str(&bundle.warnings.join("\n"))));
+        }
+        text(
+            &view,
+            mtm,
+            "ECMWF WAM · GFS Wave",
+            22.,
+            709.,
+            336.,
+            18.,
+            10.,
+        );
     } else {
-        text(&view,mtm,if demo {"Forecast refresh is disabled in demo mode."}else{"No saved forecast yet. Click Refresh forecast to fetch the latest model runs and generate height, period and direction on your GPU."},22.,235.,336.,100.,14.);
+        text(
+            &view,
+            mtm,
+            if demo {
+                "Forecast refresh is disabled in demo mode."
+            } else {
+                "No saved forecast yet. Click Refresh forecast to fetch the latest model runs and generate height, period and direction on your GPU."
+            },
+            22.,
+            235.,
+            336.,
+            100.,
+            14.,
+        );
     }
-    let tracking=unsafe { NSTrackingArea::initWithRect_options_owner_userInfo(NSTrackingArea::alloc(),view.bounds(),
-        NSTrackingAreaOptions::MouseMoved|NSTrackingAreaOptions::MouseEnteredAndExited|NSTrackingAreaOptions::ActiveInKeyWindow,Some(&view),None) };
+    let tracking = unsafe {
+        NSTrackingArea::initWithRect_options_owner_userInfo(
+            NSTrackingArea::alloc(),
+            view.bounds(),
+            NSTrackingAreaOptions::MouseMoved
+                | NSTrackingAreaOptions::MouseEnteredAndExited
+                | NSTrackingAreaOptions::ActiveInKeyWindow,
+            Some(&view),
+            None,
+        )
+    };
     view.addTrackingArea(&tracking);
     view.into_super()
 }
