@@ -62,50 +62,46 @@ For a refactor that should not change the UI, render previews from the old and n
 
 ## Coordination
 
-- `main` holds the untouched baseline. Work happens on the `improvements` branch.
-- One commit per work-log item, with the item number in the subject (for example `#4: Clear save error after a successful cache write`).
-- Before starting an item, set its status to `in progress (<agent>)` and commit or tell the user, so two agents don't edit the same code at once.
-- Items 12 to 15 restructure `ui.rs`. Avoid starting other UI items in parallel with them.
+- `main` is the released code and is published at https://github.com/gregrmunday/fomo. Work on a feature branch, run the checks, then merge into `main`.
+- One commit per work item, with the item number in the subject where there is one (for example `#4: Clear save error after a successful cache write`).
+- Before starting an item, mark it `in progress (<agent>)` here and commit, or tell the user, so two agents don't edit the same code at once.
+- These repos' local git config commits as `Gregory Munday <100290135+gregrmunday@users.noreply.github.com>`, keeping the user's personal email out of public history. Don't override it.
 
-## Status and handoff (2026-10-19)
+## Distribution (published 2026-10-19)
 
-All 18 review items are done on `improvements` (one commit each after the baseline). Tests went from 9 to 21; fmt, clippy `-D warnings`, tests and the release build all pass. `main` is unchanged, so `git diff main..improvements` shows the whole change.
+Friends install with `brew install gregrmunday/tap/fomo`, then `brew services start fomo`.
 
-Still to check by hand, because they need a real session:
+| Repository | Visibility | Purpose |
+| --- | --- | --- |
+| `gregrmunday/fomo` (this repo) | public | App source. The `forecast` branch holds only `fomo-v2.json`, as one commit replaced by every publish. |
+| `gregrmunday/homebrew-tap` (`~/Documents/homebrew-tap`) | public | `Formula/fomo.rb`, plus workflows that build bottles for macOS 15 on Apple Silicon and Intel. |
+| `gregrmunday/fomo-forecast` (`~/Documents/fomo-forecast`) | private | Snapshot of the forecast worker and model; publishes a forecast every three hours. |
+
+How forecasts reach apps:
+
+- `fomo-forecast`'s **Publish forecast** workflow runs the model on CPU (about 1 minute including setup), then force-pushes the result to `fomo`'s `forecast` branch. It uses the write deploy key "fomo-forecast publisher", whose private half is the secret `FOMO_DEPLOY_KEY`.
+- Apps without the worker (`forecast::runs_locally()` false) download `https://raw.githubusercontent.com/gregrmunday/fomo/forecast/fomo-v2.json`, validate it and save it as `~/Library/Application Support/Fomo/forecast.json`. The CDN caches it for about 5 minutes.
+- The user's own Mac still has the worker, so there Refresh runs it locally on the GPU.
+- The research project at `~/Documents/BuoyData/deepwater-models` stays untouched; do not push it anywhere. `fomo-forecast` holds the only published copy of its inference code. After retraining, run `~/Documents/fomo-forecast/sync-from-research.sh`, then commit and push there.
+
+Releasing a new app version:
+
+1. Bump `version` in `Cargo.toml` and `CFBundleShortVersionString`/`CFBundleVersion` in `packaging/Info.plist`. A test fails if they disagree. Build once to update `Cargo.lock`.
+2. Merge into `main`, then `git tag -a vX.Y.Z -m "Fomo X.Y.Z"`, push `main` and the tag, and `gh release create vX.Y.Z`.
+3. In the tap: `brew bump-formula-pr --url=https://github.com/gregrmunday/fomo/archive/refs/tags/vX.Y.Z.tar.gz gregrmunday/tap/fomo`. When **brew test-bot** passes on the PR, run **brew pr-pull** (`gh workflow run publish.yml -R gregrmunday/homebrew-tap -f pull_request=<n>`) to publish the bottles.
+
+Still open:
+
+- The app and worker ship Coastal Monitoring's published *development* API key with a Referer workaround. The user should request a personal key before sharing widely.
+- Macs older than macOS 15 have no bottle, so they build from source. That needs current Command Line Tools and installs Homebrew's Rust; `brew autoremove` reclaims it afterwards.
+
+## Review status (2026-10-19)
+
+All 18 review items below are done, with one commit each; tests went from 9 to 21 (24 after distribution). Still to check by hand, because they need a real session:
 
 - **#7** Sleep the Mac for longer than the refresh interval, then wake it. Readings should update within about 15 seconds.
 - **#11** With the panel open, try ⌘, and ⌘Q from the Forecast, Settings and Credits pages. On Credits, select text and press ⌘C.
 - **#13** Click through Forecast, Settings, Credits and Back. The Settings and Data & credits buttons should toggle back to conditions.
-
-`dist/Fomo.app` has not been rebuilt. Run `./scripts/build-app.sh` after quitting any running copy, because replacing a running signed binary can crash it. `dist/previews` was regenerated from the final tree.
-
-## Distribution plan (started 2026-10-19)
-
-Goal: friends with MacBooks run `brew install gregrmunday/tap/fomo` and get a working app, forecasts included.
-
-Decisions made by the user:
-
-- **Forecasts are computed once and published.** A scheduled GitHub Action in a new **private** repo `gregrmunday/fomo-forecast` runs the worker on CPU and publishes `fomo-v2.json` to the `forecast` branch of the public app repo. Apps download it from `https://raw.githubusercontent.com/gregrmunday/fomo/forecast/fomo-v2.json`. Nobody else installs Python or PyTorch.
-- **The app is built from source by a Homebrew formula** in the public tap `gregrmunday/homebrew-tap`. Building locally avoids Gatekeeper warnings without an Apple Developer ID. Launch at login is `brew services start fomo`.
-- **Public:** `gregrmunday/fomo` and `gregrmunday/homebrew-tap`. **Private:** `gregrmunday/fomo-forecast`, which holds a snapshot of the inference code and the current model.
-- The research project at `~/Documents/BuoyData/deepwater-models` stays untouched; do not push it anywhere. `fomo-forecast` holds the only published copy of its inference code.
-
-Facts behind the plan:
-
-- The live forecast path uses Open-Meteo (no key) and the Coastal Monitoring API. It fetches 96 h of buoy history every run, so observations need no persistent state. ECMWF credentials and eccodes are only for training archives.
-- The worker supports `--device cpu`. The model is 3.2 MB and the code about 0.5 MB.
-- `artifacts/latest-moe.json` holds an absolute path. The snapshot rewrites it as relative, and the job runs from the repo root.
-- `swell_panel` reads earlier forecasts from `forecasts/archive/` next to the output, so the Action carries that archive between runs in its cache.
-
-Still open for the user: the app ships Coastal Monitoring's published development key. Before wide sharing, request a personal key.
-
-| # | Item | Status |
-| --- | --- | --- |
-| D1 | App downloads the published forecast when no local worker exists; auto-refresh after `refresh_after_utc`; Credits show forecast data attribution | done |
-| D2 | App release prep: `--version`, version 0.2.0, bundle id, LICENSE, README install section | done |
-| D3 | `fomo-forecast` repo: inference snapshot, requirements, sync script, scheduled workflow; tested in a clean local venv | done (local repo at `~/Documents/fomo-forecast`, committed, not pushed) |
-| D4 | `homebrew-tap` repo: `Formula/fomo.rb`; tested with a local tarball | written at `~/Documents/homebrew-tap` (not pushed); style and audit clean; its install steps verified by hand. A real `brew install` here is blocked: Homebrew requires Command Line Tools matching macOS 27, and this Mac has 26.6 |
-| D5 | Publish, after the user's go-ahead: create repos, push, tag v0.2.0, deploy key, first workflow run, install from GitHub | todo |
 
 ## Work log
 
