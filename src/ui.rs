@@ -629,14 +629,14 @@ impl Delegate {
             .and_then(|w| w.height)
             .map(|h| format!("{:.1}", config.height(h)))
             .unwrap_or_else(|| "—".into());
-        label(
+        let height_label = label(
             &root, mtm, &height, 37.0, 195.0, 177.0, 62.0, 48.0, 0.3, &white,
         );
         label(
             &root,
             mtm,
             config.height_unit(),
-            (46.0 + height.len() as f64 * 27.0).min(204.0),
+            (text_end(&height_label) + 3.0).min(204.0),
             223.0,
             40.0,
             25.0,
@@ -827,7 +827,7 @@ impl Delegate {
             .and_then(|w| w.speed)
             .map(|s| format!("{:.0}", config.wind_unit.convert(s)))
             .unwrap_or_else(|| "—".into());
-        label(
+        let speed_label = label(
             &root,
             mtm,
             &speed,
@@ -843,7 +843,7 @@ impl Delegate {
             &root,
             mtm,
             config.wind_unit.label(),
-            102.0,
+            (text_end(&speed_label) + 2.0).min(150.0),
             502.0,
             70.0,
             21.0,
@@ -2059,6 +2059,10 @@ impl Dashboard {
 fn top_rect(x: f64, y: f64, w: f64, h: f64) -> NSRect {
     NSRect::new(NSPoint::new(x, HEIGHT - y - h), NSSize::new(w, h))
 }
+// Right edge of a single-line label's rendered text, for placing a trailing unit.
+fn text_end(label: &NSTextField) -> f64 {
+    label.frame().origin.x + label.sizeThatFits(NSSize::new(10_000.0, 10_000.0)).width
+}
 fn rgb(r: f64, g: f64, b: f64) -> Retained<NSColor> {
     NSColor::colorWithSRGBRed_green_blue_alpha(r, g, b, 1.0)
 }
@@ -2296,7 +2300,7 @@ fn render_previews(mtm: MainThreadMarker, dir: &str) {
     std::fs::create_dir_all(dir).expect("create preview directory");
     let delegate = Delegate::new(mtm);
     let config = Config::default();
-    let state = State {
+    let mut state = State {
         snapshot: data::demo(config.spot),
         config,
         generation: 0,
@@ -2311,6 +2315,14 @@ fn render_previews(mtm: MainThreadMarker, dir: &str) {
         forecast_page: false,
         forecast_generation: 0,
     };
+    // Every current reading missing: each must render as "—", never as zero.
+    let mut missing = state.snapshot.clone();
+    if let Some(wave) = missing.waves.last_mut() {
+        (wave.height, wave.period, wave.direction) = (None, None, None);
+    }
+    if let Some(wind) = missing.wind.as_mut() {
+        (wind.speed, wind.direction, wind.gust) = (None, None, None);
+    }
     // SAFETY: These immutable appearance constants are supplied by linked AppKit.
     let appearances = unsafe {
         [
@@ -2322,6 +2334,7 @@ fn render_previews(mtm: MainThreadMarker, dir: &str) {
         let appearance = NSAppearance::appearanceNamed(name).expect("system appearance");
         for page in [
             "conditions",
+            "conditions-missing",
             "conditions-hover",
             "conditions-hover-first",
             "conditions-hover-last",
@@ -2334,6 +2347,12 @@ fn render_previews(mtm: MainThreadMarker, dir: &str) {
             let view = match page {
                 "settings" => delegate.settings_view(&state),
                 "credits" => delegate.about_view(&state),
+                "conditions-missing" => {
+                    let full = std::mem::replace(&mut state.snapshot, missing.clone());
+                    let view = delegate.dashboard(&state);
+                    state.snapshot = full;
+                    view
+                }
                 _ => delegate.dashboard(&state),
             };
             if page.starts_with("conditions-hover") || page.starts_with("wind-hover") {
