@@ -12,8 +12,16 @@ A Rust macOS menu bar app for Cornwall buoy observations, built directly on AppK
 | `src/model.rs` | Settings, domain types, unit conversion, text formatting, menu title |
 | `src/data.rs` | Coastal Monitoring API via `/usr/bin/curl`, parsing, QC flags, wind-station choice |
 | `src/forecast.rs` | Forecast JSON schema and validation; launches the GPU worker |
-| `src/forecast_ui.rs` | Forecast page |
-| `src/ui.rs` | Everything else in AppKit: app delegate, state, status item, pages, charts, previews |
+| `src/ui/mod.rs` | AppKit app: `State`, the `Delegate` lifecycle (fetching, timers, wake, rendering), main menu, `run` |
+| `src/ui/pages.rs` | `Delegate::dashboard`, `settings_view`, `about_view` page builders |
+| `src/ui/forecast_page.rs` | Forecast page |
+| `src/ui/dashboard.rs` | `Dashboard` view: card drawing and chart hover |
+| `src/ui/chart.rs` | `HistoryChart`: wave and wind history geometry and drawing |
+| `src/ui/status.rs` | Menu bar readings view (`StatusReadings`, `BearingArrow`) |
+| `src/ui/widgets.rs` | Shared helpers: `label`, `button`, `popup`, `top_rect`, colours, arrows |
+| `src/ui/preview.rs` | `--render-preview` and `--render-swell-preview` |
+
+Submodules of `ui` start with `use super::*;` and mark items `pub(super)` when a sibling needs them.
 
 The forecast worker is a separate project at `~/Documents/BuoyData/deepwater-models` (not in this repo). Its output `forecasts/fomo-v2.json` must pass `ForecastBundle::validate()`. Today it emits two experts, `ecmwf_wam` and `ncep_gfswave025`.
 
@@ -77,8 +85,8 @@ Review findings from 2026-10-19, worked through in order. Status is `todo`, `in 
 
 ### Structure
 
-- [ ] **#12 Split `ui.rs`** (2,159 lines) into a `ui/` module: app and state, status item, charts, pages, shared widgets, previews. Move `forecast_ui.rs` in as well. Status: in progress (Claude)
-- [ ] **#13 `Page` enum.** Replace `settings`, `about` and `forecast_page` booleans plus the 100/200/300/400 page numbers. Remove the unused `tag` override on `Dashboard`. Status: todo
+- [x] **#12 Split `ui.rs`** (2,159 lines) into a `ui/` module: app and state, status item, charts, pages, shared widgets, previews. Move `forecast_ui.rs` in as well. Status: done
+- [ ] **#13 `Page` enum.** Replace `settings`, `about` and `forecast_page` booleans plus the 100/200/300/400 page numbers. Remove the unused `tag` override on `Dashboard`. Status: in progress (Claude)
 - [ ] **#14 Duplication.** `State` built in three places; wind-clearing block in three; status icon built twice; forecast page re-implements widget helpers and uses calibrated rather than sRGB colours. Status: todo
 - [ ] **#15 Forecast page typography.** Match the weights and colours used on the other pages. Status: todo
 

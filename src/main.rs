@@ -1,7 +1,5 @@
 mod data;
 mod forecast;
-#[cfg(target_os = "macos")]
-mod forecast_ui;
 mod model;
 
 #[cfg(target_os = "macos")]
