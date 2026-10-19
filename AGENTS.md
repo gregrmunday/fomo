@@ -64,8 +64,8 @@ Review findings from 2026-10-19, worked through in order. Status is `todo`, `in 
 
 - [x] **#3 Unit label placement.** `Delegate::dashboard` positions the height unit with `height.len()` (bytes, so `—` counts as 3) times 27pt; the wind unit uses a fixed x. Measure the rendered number instead. Status: done
 - [x] **#4 Save error never clears.** `Delegate::complete` sets `save_error` on a failed cache write but never clears it on success. Status: done
-- [ ] **#5 Forecast axis label rounding.** `forecast_ui::view` labels the top gridline with `{high:.0}`; 1.3 m reads as "1". Share the scale computation between drawing and labelling. Status: in progress (Claude)
-- [ ] **#6 Worker error lost.** `forecast::regenerate` reads the first 64 KB of the log instead of the last, and `read_to_string` yields nothing on invalid UTF-8. Status: todo
+- [x] **#5 Forecast axis label rounding.** `forecast_ui::view` labels the top gridline with `{high:.0}`; 1.3 m reads as "1". Share the scale computation between drawing and labelling. Status: done
+- [ ] **#6 Worker error lost.** `forecast::regenerate` reads the first 64 KB of the log instead of the last, and `read_to_string` yields nothing on invalid UTF-8. Status: in progress (Claude)
 
 ### Robustness and UX
 

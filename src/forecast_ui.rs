@@ -32,12 +32,9 @@ define_class!(
             let Some(buoy) = &self.ivars().buoy else { return; };
             for (channel, top, height) in [(0, 220.0, 106.0), (1, 386.0, 106.0)] {
                 let points = &buoy.points;
-                let value = |p: &ForecastPoint, quantile: usize| {
-                    let q = if channel == 0 { &p.hs_m } else { &p.tp_s };
-                    let raw = [q.p10, q.p50, q.p90][quantile];
-                    if channel == 0 { self.ivars().config.height(raw) } else { raw }
-                };
-                let high = points.iter().map(|p| value(p, 2)).fold(0.0, f64::max).max(1.0) * 1.08;
+                let config = &self.ivars().config;
+                let value = |p: &ForecastPoint, quantile: usize| channel_value(config, p, channel, quantile);
+                let high = scale_max(config, buoy, channel);
                 let pos = |i: usize, v: f64| NSPoint::new(LEFT+i as f64/(points.len()-1) as f64*WIDTH,
                     HEIGHT-top-height+v/high*height);
                 for grid in 0..=2 {
@@ -144,6 +141,32 @@ impl ForecastCanvas {
         if let Some(label) = self.ivars().readout.get() {
             label.setStringValue(&NSString::from_str(&text));
         }
+    }
+}
+// A forecast quantile (0 = p10, 1 = p50, 2 = p90) in display units. Channel 0 is Hs, 1 is Tp.
+fn channel_value(config: &Config, p: &ForecastPoint, channel: usize, quantile: usize) -> f64 {
+    let q = if channel == 0 { &p.hs_m } else { &p.tp_s };
+    let raw = [q.p10, q.p50, q.p90][quantile];
+    if channel == 0 {
+        config.height(raw)
+    } else {
+        raw
+    }
+}
+// Top of a chart's scale: the largest p90 plus headroom. Drawing and the axis label share it.
+fn scale_max(config: &Config, buoy: &BuoyForecast, channel: usize) -> f64 {
+    buoy.points
+        .iter()
+        .map(|p| channel_value(config, p, channel, 2))
+        .fold(0.0, f64::max)
+        .max(1.0)
+        * 1.08
+}
+fn axis_text(value: f64) -> String {
+    if value < 10.0 {
+        format!("{value:.1}")
+    } else {
+        format!("{value:.0}")
     }
 }
 fn rect(x: f64, y: f64, w: f64, h: f64) -> NSRect {
@@ -293,23 +316,10 @@ pub fn view(
             (1, 364., "PEAK PERIOD Tp"),
         ] {
             text(&view, mtm, title, 22., top, 270., 18., 10.);
-            let high = buoy
-                .points
-                .iter()
-                .map(|p| {
-                    if channel == 0 {
-                        config.height(p.hs_m.p90)
-                    } else {
-                        p.tp_s.p90
-                    }
-                })
-                .fold(0., f64::max)
-                .max(1.)
-                * 1.08;
             text(
                 &view,
                 mtm,
-                &format!("{high:.0}"),
+                &axis_text(scale_max(config, buoy, channel)),
                 12.,
                 top + 19.,
                 27.,
@@ -418,4 +428,16 @@ pub fn view(
     };
     view.addTrackingArea(&tracking);
     view.into_super()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::axis_text;
+
+    #[test]
+    fn axis_label_keeps_a_decimal_for_small_scales() {
+        assert_eq!(axis_text(1.296), "1.3");
+        assert_eq!(axis_text(9.94), "9.9");
+        assert_eq!(axis_text(20.6), "21");
+    }
 }
