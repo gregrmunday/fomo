@@ -228,7 +228,7 @@ pub fn view(
     refresh.setKeyEquivalent(&NSString::from_str("r"));
     refresh.setKeyEquivalentModifierMask(NSEventModifierFlags::Command);
     let status = if loading {
-        "Fetching model runs and buoy history · M3 GPU".into()
+        "Fetching model runs and buoy history · Mac GPU".into()
     } else if let Some(error) = error {
         error.to_string()
     } else if let Some(bundle) = bundle {
