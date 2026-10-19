@@ -1,0 +1,36 @@
+[package]
+name = "fomo"
+version = "0.1.0"
+edition = "2024"
+description = "Cornwall's buoys, at a glance. A native Rust macOS menu bar app."
+license = "MIT"
+rust-version = "1.85"
+
+[dependencies]
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+dispatch2 = "0.3"
+objc2-foundation = { version = "0.3", default-features = false, features = [
+  "std", "NSObject", "NSString", "NSArray", "NSDate", "NSNotification",
+  "NSGeometry", "NSTimer", "NSRunLoop", "NSURL", "NSProcessInfo", "NSDictionary", "NSData"
+] }
+objc2-app-kit = { version = "0.3", default-features = false, features = [
+  "std", "objc2-core-foundation", "NSApplication", "NSResponder", "NSRunningApplication",
+  "NSStatusBar", "NSStatusItem", "NSStatusBarButton", "NSButton", "NSButtonCell",
+  "NSControl", "NSCell", "NSView", "NSViewController", "NSPopover", "NSWindow",
+  "NSTextField", "NSText", "NSFont", "NSFontDescriptor", "NSColor", "NSColorSpace",
+  "NSBezierPath", "NSPopUpButton", "NSPopUpButtonCell", "NSMenu", "NSMenuItem",
+  "NSImage", "NSWorkspace", "NSGraphics", "NSAccessibilityProtocols", "NSEvent",
+  "NSBitmapImageRep", "NSImageRep", "NSAppearance", "NSImageView", "NSTrackingArea"
+] }
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
