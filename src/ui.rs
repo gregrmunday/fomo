@@ -31,6 +31,8 @@ struct State {
     snapshot: Snapshot,
     generation: u64,
     loading: bool,
+    // Wall-clock time of the last completed fetch, for refreshing after sleep.
+    last_fetch: Option<chrono::DateTime<chrono::Utc>>,
     settings: bool,
     about: bool,
     demo: bool,
@@ -88,6 +90,12 @@ define_class!(
             popover.setBehavior(NSPopoverBehavior::Transient);
             let _ = self.ivars().controller.set(controller);
             let _ = self.ivars().popover.set(popover);
+            // SAFETY: didWake: is defined below and takes the notification. The delegate
+            // lives for the whole process, so the observer is never left dangling.
+            unsafe {
+                NSWorkspace::sharedWorkspace().notificationCenter().addObserver_selector_name_object(
+                    self, sel!(didWake:), Some(NSWorkspaceDidWakeNotification), None);
+            }
             self.render();
             self.schedule();
             self.refresh();
@@ -198,6 +206,19 @@ define_class!(
         #[unsafe(method(refreshForecast:))]
         fn refresh_forecast_action(&self, _sender: Option<&AnyObject>) { self.refresh_forecast(); }
 
+        #[unsafe(method(didWake:))]
+        fn did_wake(&self, _notification: &NSNotification) {
+            // Give Wi-Fi a moment to reconnect before fetching.
+            // SAFETY: refreshIfDue: is defined below and takes the timer as its sender.
+            unsafe {
+                NSTimer::scheduledTimerWithTimeInterval_target_selector_userInfo_repeats(
+                    10.0, self, sel!(refreshIfDue:), None, false);
+            }
+        }
+
+        #[unsafe(method(refreshIfDue:))]
+        fn refresh_if_due_action(&self, _sender: Option<&AnyObject>) { self.refresh_if_due(); }
+
         #[unsafe(method(quit:))]
         fn quit(&self, _sender: Option<&AnyObject>) {
             NSApplication::sharedApplication(self.mtm()).terminate(None);
@@ -225,6 +246,7 @@ impl Delegate {
                 snapshot,
                 generation: 0,
                 loading: false,
+                last_fetch: None,
                 settings: false,
                 about: false,
                 demo,
@@ -258,6 +280,7 @@ impl Delegate {
             popover.close();
             return;
         }
+        self.refresh_if_due();
         self.render();
         if let Some(button) = self.ivars().status.get().and_then(|s| s.button(self.mtm())) {
             #[allow(deprecated)]
@@ -328,11 +351,23 @@ impl Delegate {
         });
     }
 
+    // The repeating timer does not catch up after sleep, so wake and opening the panel
+    // fetch when the last completed fetch is older than the refresh interval.
+    fn refresh_if_due(&self) {
+        let state = self.ivars().state.borrow();
+        let due = !state.demo && fetch_due(state.last_fetch, state.config.refresh_minutes);
+        drop(state);
+        if due {
+            self.refresh();
+        }
+    }
+
     fn complete(&self, generation: u64, mut result: Snapshot) {
         let mut state = self.ivars().state.borrow_mut();
         if state.generation != generation {
             return;
         }
+        state.last_fetch = Some(chrono::Utc::now());
         if result.wave_error.is_some() {
             result.waves = state.snapshot.waves.clone();
         }
@@ -2253,6 +2288,7 @@ fn render_swell_previews(mtm: MainThreadMarker, dir: &str) {
             config,
             generation: 0,
             loading: false,
+            last_fetch: None,
             settings: false,
             about: false,
             demo: false,
@@ -2304,6 +2340,7 @@ fn render_previews(mtm: MainThreadMarker, dir: &str) {
         config,
         generation: 0,
         loading: false,
+        last_fetch: None,
         settings: false,
         about: false,
         demo: true,

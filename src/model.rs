@@ -205,6 +205,10 @@ pub fn age_minutes(time: DateTime<Utc>) -> i64 {
 pub fn stale(time: DateTime<Utc>, minutes: i64) -> bool {
     age_minutes(time) > minutes || time > Utc::now() + chrono::Duration::minutes(5)
 }
+// Wall-clock time, because Instant stops while a Mac sleeps.
+pub fn fetch_due(last_fetch: Option<DateTime<Utc>>, refresh_minutes: u32) -> bool {
+    last_fetch.is_none_or(|t| Utc::now() - t >= chrono::Duration::minutes(refresh_minutes.into()))
+}
 pub fn age_text(time: DateTime<Utc>) -> String {
     let m = age_minutes(time);
     if m == 0 {
@@ -327,6 +331,15 @@ mod tests {
             .round(),
             34.0
         );
+    }
+
+    #[test]
+    fn fetch_is_due_once_the_refresh_interval_has_passed() {
+        let ago = |minutes| Some(Utc::now() - chrono::Duration::minutes(minutes));
+        assert!(fetch_due(None, 5));
+        assert!(!fetch_due(ago(4), 5));
+        assert!(fetch_due(ago(5), 5));
+        assert!(fetch_due(ago(8 * 60), 30));
     }
 
     #[test]
