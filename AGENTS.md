@@ -73,11 +73,11 @@ Review findings from 2026-10-19, worked through in order. Status is `todo`, `in 
 - [x] **#8 Network error detail.** `data::get` collapses DNS, timeout, TLS and HTTP failures into one message and matches `"key"` anywhere in the body. Classify by curl exit code and HTTP status. Status: done
 - [x] **#9 Forecast reload.** `Delegate::complete` re-reads and re-validates the forecast JSON on the main thread every refresh, and load errors are silently dropped. Reload only when the file changes and show load errors. Status: done
 - [x] **#10 API key in process arguments.** The key is visible to `ps`. Pass it to curl through `--config -` on stdin. Status: done
-- [ ] **#11 Shortcuts on every page.** ⌘Q and ⌘, are button key equivalents on the dashboard only. Add an app main menu (also gives ⌘C for selectable text, which LSUIElement apps otherwise lack). Status: in progress (Claude)
+- [x] **#11 Shortcuts on every page.** ⌘Q and ⌘, are button key equivalents on the dashboard only. Add an app main menu (also gives ⌘C for selectable text, which LSUIElement apps otherwise lack). Status: done (needs a manual key check: open the panel, then on the Forecast, Settings and Credits pages try ⌘, and ⌘Q; on Credits, select text and press ⌘C)
 
 ### Structure
 
-- [ ] **#12 Split `ui.rs`** (2,159 lines) into a `ui/` module: app and state, status item, charts, pages, shared widgets, previews. Move `forecast_ui.rs` in as well. Status: todo
+- [ ] **#12 Split `ui.rs`** (2,159 lines) into a `ui/` module: app and state, status item, charts, pages, shared widgets, previews. Move `forecast_ui.rs` in as well. Status: in progress (Claude)
 - [ ] **#13 `Page` enum.** Replace `settings`, `about` and `forecast_page` booleans plus the 100/200/300/400 page numbers. Remove the unused `tag` override on `Dashboard`. Status: todo
 - [ ] **#14 Duplication.** `State` built in three places; wind-clearing block in three; status icon built twice; forecast page re-implements widget helpers and uses calibrated rather than sRGB colours. Status: todo
 - [ ] **#15 Forecast page typography.** Match the weights and colours used on the other pages. Status: todo

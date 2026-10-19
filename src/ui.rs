@@ -118,6 +118,7 @@ define_class!(
                 NSWorkspace::sharedWorkspace().notificationCenter().addObserver_selector_name_object(
                     self, sel!(didWake:), Some(NSWorkspaceDidWakeNotification), None);
             }
+            NSApplication::sharedApplication(mtm).setMainMenu(Some(&main_menu(self)));
             self.render();
             self.schedule();
             self.refresh();
@@ -579,7 +580,7 @@ impl Delegate {
             78.0,
             28.0,
         );
-        let settings = button(
+        button(
             &root,
             self,
             "Settings",
@@ -589,8 +590,6 @@ impl Delegate {
             68.0,
             28.0,
         );
-        settings.setKeyEquivalent(&NSString::from_str(","));
-        settings.setKeyEquivalentModifierMask(NSEventModifierFlags::Command);
 
         let spot = popup(
             &root,
@@ -1119,9 +1118,7 @@ impl Delegate {
             109.0,
             24.0,
         );
-        let quit = button(&root, self, "Quit", sel!(quit:), 307.0, 717.0, 52.0, 24.0);
-        quit.setKeyEquivalent(&NSString::from_str("q"));
-        quit.setKeyEquivalentModifierMask(NSEventModifierFlags::Command);
+        button(&root, self, "Quit", sel!(quit:), 307.0, 717.0, 52.0, 24.0);
         root
     }
 
@@ -2254,6 +2251,51 @@ fn popup(
     }
     parent.addSubview(&popup);
     popup
+}
+
+// The menu bar never shows this menu (Fomo is an accessory app), but AppKit still
+// matches its key equivalents while the panel is key, so shortcuts work on every page.
+fn main_menu(delegate: &Delegate) -> Retained<NSMenu> {
+    let mtm = delegate.mtm();
+    let submenu = |title: &str, items: &[(&str, Sel, &str, bool)]| {
+        let menu = NSMenu::initWithTitle(NSMenu::alloc(mtm), &NSString::from_str(title));
+        for (title, action, key, to_delegate) in items {
+            // SAFETY: Each action takes one sender argument. Delegate actions are defined on
+            // Delegate, which outlives the menu; copy:/selectAll: go to the first responder.
+            unsafe {
+                let item = NSMenuItem::initWithTitle_action_keyEquivalent(
+                    NSMenuItem::alloc(mtm),
+                    &NSString::from_str(title),
+                    Some(*action),
+                    &NSString::from_str(key),
+                );
+                if *to_delegate {
+                    item.setTarget(Some(delegate));
+                }
+                menu.addItem(&item);
+            }
+        }
+        let holder = NSMenuItem::new(mtm);
+        holder.setSubmenu(Some(&menu));
+        holder
+    };
+    let bar = NSMenu::new(mtm);
+    bar.addItem(&submenu(
+        "Fomo",
+        &[
+            ("Settings…", sel!(settings:), ",", true),
+            ("Quit Fomo", sel!(quit:), "q", true),
+        ],
+    ));
+    // Lets ⌘C copy the selectable credits and notes text.
+    bar.addItem(&submenu(
+        "Edit",
+        &[
+            ("Copy", sel!(copy:), "c", false),
+            ("Select All", sel!(selectAll:), "a", false),
+        ],
+    ));
+    bar
 }
 
 fn open_url(url: &str) {
