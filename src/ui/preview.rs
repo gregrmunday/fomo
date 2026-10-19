@@ -115,16 +115,10 @@ pub(super) fn render_previews(mtm: MainThreadMarker, dir: &str) {
             view.hover_at(NSPoint::new(0.0, 0.0));
             assert!(view.ivars().hovered.get().is_none());
         }
-        let forecast = crate::forecast::load_local().ok().flatten();
-        let forecast_view = super::forecast_page::view(
-            mtm,
-            &delegate,
-            &state.config,
-            forecast.as_ref(),
-            false,
-            None,
-            false,
-        );
+        // The forecast page shows this Mac's saved forecast, outside demo mode.
+        let mut forecast_state = State::new(state.config.clone(), Snapshot::default(), false);
+        forecast_state.forecast = crate::forecast::load_local().ok().flatten();
+        let forecast_view = super::forecast_page::view(mtm, &delegate, &forecast_state);
         write_preview(
             mtm,
             &forecast_view,

@@ -166,15 +166,13 @@ fn axis_text(value: f64) -> String {
 fn chart_x(buoy: &BuoyForecast, index: usize) -> f64 {
     CHART_LEFT + index as f64 / (buoy.points.len() - 1) as f64 * CHART_WIDTH
 }
-pub fn view(
-    mtm: MainThreadMarker,
-    target: &Delegate,
-    config: &Config,
-    bundle: Option<&ForecastBundle>,
-    loading: bool,
-    error: Option<&str>,
-    demo: bool,
-) -> Retained<NSView> {
+pub(super) fn view(mtm: MainThreadMarker, target: &Delegate, state: &State) -> Retained<NSView> {
+    let config = &state.config;
+    let bundle = state.forecast.as_ref();
+    let (loading, demo) = (state.forecast_loading, state.demo);
+    let error = state.forecast_error.as_deref();
+    // Your Mac generates forecasts; everyone else's downloads the published one.
+    let local = crate::forecast::runs_locally();
     let buoy = bundle
         .and_then(|b| b.for_station(config.spot.id()))
         .cloned();
@@ -213,10 +211,10 @@ pub fn view(
     let refresh = button(
         &view,
         target,
-        if loading {
-            "Updating on GPU…"
-        } else {
-            "↻ Refresh forecast"
+        match (loading, local) {
+            (true, true) => "Updating on GPU…",
+            (true, false) => "Downloading…",
+            (false, _) => "↻ Refresh forecast",
         },
         sel!(refreshForecast:),
         207.,
@@ -227,8 +225,10 @@ pub fn view(
     refresh.setEnabled(!loading && !demo);
     refresh.setKeyEquivalent(&NSString::from_str("r"));
     refresh.setKeyEquivalentModifierMask(NSEventModifierFlags::Command);
-    let status = if loading {
+    let status = if loading && local {
         "Fetching model runs and buoy history · Mac GPU".into()
+    } else if loading {
+        "Downloading the latest forecast…".into()
     } else if let Some(error) = error {
         error.to_string()
     } else if let Some(bundle) = bundle {
@@ -241,8 +241,10 @@ pub fn view(
             age_text(bundle.issued_at_utc),
             if bundle.is_stale() { " · delayed" } else { "" }
         )
-    } else {
+    } else if local {
         "Refresh to generate your local GPU forecast".into()
+    } else {
+        "Downloads automatically when a forecast is published".into()
     };
     let status_color = if error.is_some() || bundle.is_some_and(|b| b.is_stale()) {
         amber()
@@ -349,8 +351,10 @@ pub fn view(
             mtm,
             if demo {
                 "Forecast refresh is disabled in demo mode."
-            } else {
+            } else if local {
                 "No saved forecast yet. Click Refresh forecast to fetch the latest model runs and generate height, period and direction on your GPU."
+            } else {
+                "No forecast downloaded yet. It downloads automatically while you are online; click Refresh forecast to try now."
             },
             22.,
             235.,

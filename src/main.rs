@@ -7,9 +7,14 @@ mod ui;
 
 fn main() {
     if std::env::args().any(|a| a == "--refresh-forecast") {
-        match forecast::regenerate() {
+        let how = if forecast::runs_locally() {
+            "generated on this Mac's GPU"
+        } else {
+            "downloaded"
+        };
+        match forecast::refresh() {
             Ok(bundle) => println!(
-                "GPU forecast refreshed: {} · {} buoys",
+                "Forecast {how}: {} · {} buoys",
                 bundle.model_version,
                 bundle.forecasts.len()
             ),

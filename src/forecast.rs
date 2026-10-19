@@ -15,12 +15,19 @@ pub struct ForecastBundle {
     pub stale_after_utc: DateTime<Utc>,
     pub units: Units,
     pub warnings: Vec<String>,
+    // The model data behind this forecast, with the attribution each licence requires.
+    #[serde(default)]
+    pub sources: Vec<Source>,
     pub forecasts: Vec<BuoyForecast>,
     #[serde(default)]
     pub swell_panel: Option<SwellPanel>,
     // When the file was written, so callers can skip re-reading an unchanged forecast.
     #[serde(skip)]
     pub modified: Option<SystemTime>,
+}
+#[derive(Clone, Debug, Deserialize)]
+pub struct Source {
+    pub attribution: String,
 }
 #[derive(Clone, Debug, Deserialize)]
 pub struct SwellPanel {
@@ -109,7 +116,7 @@ impl Quantiles {
 impl ForecastBundle {
     pub fn load(path: &Path) -> Result<Self, String> {
         let metadata = fs::metadata(path).map_err(|e| e.to_string())?;
-        if metadata.len() > 4 * 1024 * 1024 {
+        if metadata.len() > MAX_BYTES {
             return Err("Forecast file too large".into());
         }
         let mut bundle: Self = serde_json::from_slice(&fs::read(path).map_err(|e| e.to_string())?)
@@ -117,6 +124,16 @@ impl ForecastBundle {
         bundle.validate()?;
         bundle.modified = metadata.modified().ok();
         Ok(bundle)
+    }
+    // Each distinct data attribution, in the order the sources list them.
+    pub fn attributions(&self) -> Vec<&str> {
+        let mut seen = Vec::new();
+        for source in &self.sources {
+            if !seen.contains(&source.attribution.as_str()) {
+                seen.push(source.attribution.as_str());
+            }
+        }
+        seen
     }
     pub fn is_stale(&self) -> bool {
         Utc::now() > self.stale_after_utc
@@ -285,10 +302,48 @@ pub fn project_dir() -> std::path::PathBuf {
                 .join("Documents/BuoyData/deepwater-models")
         })
 }
+// Published every few hours by the private fomo-forecast repository's scheduled job.
+pub const PUBLISHED_URL: &str =
+    "https://raw.githubusercontent.com/gregrmunday/fomo/forecast/fomo-v2.json";
+const MAX_BYTES: u64 = 4 * 1024 * 1024;
+
+// A Mac with the forecast worker project generates forecasts itself; any other Mac
+// downloads the published one.
+pub fn runs_locally() -> bool {
+    project_dir().join("scripts/deepwater").is_file()
+}
 pub fn output_path() -> std::path::PathBuf {
-    std::env::var_os("FOMO_FORECAST_FILE")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| project_dir().join("forecasts/fomo-v2.json"))
+    if let Some(path) = std::env::var_os("FOMO_FORECAST_FILE") {
+        return path.into();
+    }
+    if runs_locally() {
+        project_dir().join("forecasts/fomo-v2.json")
+    } else {
+        crate::model::support_dir()
+            .unwrap_or_default()
+            .join("forecast.json")
+    }
+}
+// Generates a forecast on this Mac's GPU when the worker is here, else downloads one.
+pub fn refresh() -> Result<ForecastBundle, String> {
+    if runs_locally() {
+        regenerate()
+    } else {
+        download()
+    }
+}
+fn download() -> Result<ForecastBundle, String> {
+    let url = std::env::var("FOMO_FORECAST_URL").unwrap_or_else(|_| PUBLISHED_URL.into());
+    install(&crate::data::download(&url, MAX_BYTES)?, &output_path())
+}
+// The saved copy is replaced only by a forecast that passes validation.
+fn install(bytes: &[u8], path: &Path) -> Result<ForecastBundle, String> {
+    let mut bundle: ForecastBundle =
+        serde_json::from_slice(bytes).map_err(|e| format!("Unreadable forecast: {e}"))?;
+    bundle.validate()?;
+    crate::model::write_atomic(path, bytes)?;
+    bundle.modified = modified(path);
+    Ok(bundle)
 }
 // None when no forecast has been generated yet.
 pub fn load_from(path: &Path) -> Result<Option<ForecastBundle>, String> {
@@ -424,6 +479,11 @@ pub(crate) mod tests {
             "stale_after_utc": at("2026-10-19T15:00:00Z"),
             "units": {"height": "m", "period": "s", "direction": "degree"},
             "warnings": [],
+            "sources": [
+                {"model": "ecmwf_wam", "attribution": "ECMWF via Open-Meteo (CC BY 4.0)"},
+                {"model": "ncep_gfswave025", "attribution": "NOAA NCEP via Open-Meteo"},
+                {"model": "ecmwf_ifs", "attribution": "ECMWF via Open-Meteo (CC BY 4.0)"}
+            ],
             "forecasts": [buoy("76", "Perranporth"), buoy("107", "Porthleven")],
             "swell_panel": {
                 "window_start_utc": start, "window_end_utc": start + chrono::Duration::hours(24),
@@ -525,6 +585,41 @@ pub(crate) mod tests {
             }
         }
         assert!(bundle.predictions_for("999").is_empty());
+    }
+
+    #[test]
+    fn downloads_replace_the_saved_forecast_only_when_valid() {
+        let dir = std::env::temp_dir().join(format!("fomo-install-{}", std::process::id()));
+        let path = dir.join("forecast.json");
+        let valid = serde_json::to_vec(&sample()).unwrap();
+        let bundle = install(&valid, &path).unwrap();
+        assert!(bundle.modified.is_some());
+        assert_eq!(fs::read(&path).unwrap(), valid);
+
+        let mut broken = sample();
+        broken["schema_version"] = json!(1);
+        let error = install(&serde_json::to_vec(&broken).unwrap(), &path).unwrap_err();
+        assert_eq!(error, "Unsupported forecast schema");
+        assert!(
+            install(b"<html>", &path)
+                .unwrap_err()
+                .starts_with("Unreadable forecast")
+        );
+        // The earlier good forecast is still in place.
+        assert_eq!(fs::read(&path).unwrap(), valid);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn attributions_are_listed_once_each() {
+        let bundle: ForecastBundle = serde_json::from_value(sample()).unwrap();
+        assert_eq!(
+            bundle.attributions(),
+            [
+                "ECMWF via Open-Meteo (CC BY 4.0)",
+                "NOAA NCEP via Open-Meteo"
+            ]
+        );
     }
 
     #[test]

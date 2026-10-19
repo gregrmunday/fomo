@@ -314,8 +314,10 @@ impl Delegate {
             .predictions
             .iter()
             .any(|p| p.origin == "reconstructed");
-        let note = if wave_chart.predictions.is_empty() {
+        let note = if wave_chart.predictions.is_empty() && crate::forecast::runs_locally() {
             "Refresh forecast to add your network predictions."
+        } else if wave_chart.predictions.is_empty() {
+            "Model predictions appear once the forecast downloads."
         } else if reconstruction {
             "Dashed past = reconstructed · shading = model 80% range"
         } else {
@@ -839,6 +841,36 @@ impl Delegate {
             600.0,
             173.0,
             27.0,
+        );
+        label(
+            &root,
+            mtm,
+            "FORECAST INPUTS",
+            22.0,
+            646.0,
+            334.0,
+            18.0,
+            10.0,
+            0.5,
+            &muted(),
+        );
+        // The forecast file names its own sources; this default covers having none yet.
+        let inputs = state
+            .forecast
+            .as_ref()
+            .map(|b| b.attributions().join("\n"))
+            .filter(|text| !text.is_empty())
+            .unwrap_or_else(|| "ECMWF and NOAA NCEP model data via Open-Meteo (CC BY 4.0).".into());
+        multiline(
+            &root,
+            mtm,
+            &inputs,
+            22.0,
+            670.0,
+            334.0,
+            64.0,
+            11.0,
+            &muted(),
         );
         root
     }

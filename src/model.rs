@@ -96,7 +96,7 @@ impl Default for Config {
     }
 }
 
-fn support_dir() -> Option<PathBuf> {
+pub fn support_dir() -> Option<PathBuf> {
     std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Library/Application Support/Fomo"))
 }
 
@@ -147,11 +147,19 @@ impl Config {
 
 pub fn save_json(name: &str, value: &impl Serialize) -> Result<(), String> {
     let dir = support_dir().ok_or("Cannot locate your home folder")?;
-    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let bytes = serde_json::to_vec_pretty(value).map_err(|e| e.to_string())?;
-    let temporary = dir.join(format!("{name}.tmp"));
+    write_atomic(&dir.join(name), &bytes)
+}
+
+// Writes beside the destination, then renames, so readers never see a partial file.
+pub fn write_atomic(path: &std::path::Path, bytes: &[u8]) -> Result<(), String> {
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    }
+    let mut temporary = path.as_os_str().to_owned();
+    temporary.push(".tmp");
     fs::write(&temporary, bytes).map_err(|e| e.to_string())?;
-    fs::rename(temporary, dir.join(name)).map_err(|e| e.to_string())
+    fs::rename(temporary, path).map_err(|e| e.to_string())
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

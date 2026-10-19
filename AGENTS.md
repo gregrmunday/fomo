@@ -101,8 +101,8 @@ Still open for the user: the app ships Coastal Monitoring's published developmen
 
 | # | Item | Status |
 | --- | --- | --- |
-| D1 | App downloads the published forecast when no local worker exists; auto-refresh after `refresh_after_utc`; Credits show forecast data attribution | todo |
-| D2 | App release prep: `--version`, version 0.2.0, bundle id, LICENSE, README install section | todo |
+| D1 | App downloads the published forecast when no local worker exists; auto-refresh after `refresh_after_utc`; Credits show forecast data attribution | done |
+| D2 | App release prep: `--version`, version 0.2.0, bundle id, LICENSE, README install section | in progress (Claude) |
 | D3 | `fomo-forecast` repo: inference snapshot, requirements, sync script, scheduled workflow; tested in a clean local venv | todo |
 | D4 | `homebrew-tap` repo: `Formula/fomo.rb`; tested with a local tarball | todo |
 | D5 | Publish, after the user's go-ahead: create repos, push, tag v0.2.0, deploy key, first workflow run, install from GitHub | todo |

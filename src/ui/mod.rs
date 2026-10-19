@@ -61,6 +61,8 @@ struct State {
     forecast_error: Option<String>,
     forecast_loading: bool,
     forecast_generation: u64,
+    // Last attempt to download the published forecast, to pace automatic retries.
+    forecast_checked: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 impl State {
@@ -78,6 +80,7 @@ impl State {
             forecast_error: None,
             forecast_loading: false,
             forecast_generation: 0,
+            forecast_checked: None,
         }
     }
 
@@ -160,6 +163,7 @@ define_class!(
             self.render();
             self.schedule();
             self.refresh();
+            self.refresh_forecast_if_due();
             if std::env::args().any(|a| a == "--show") { self.toggle(); }
         }
     }
@@ -397,6 +401,21 @@ impl Delegate {
         state.save_error = state.snapshot.save(state.config.spot).err();
         drop(state);
         self.render();
+        self.refresh_forecast_if_due();
+    }
+
+    // Without a local worker, download the published forecast once the current one is
+    // due for replacement, trying at most every 30 minutes. A local worker only runs
+    // when asked, because it is heavy.
+    fn refresh_forecast_if_due(&self) {
+        let state = self.ivars().state.borrow();
+        let replaceable =
+            (state.forecast.as_ref()).is_none_or(|b| chrono::Utc::now() > b.refresh_after_utc);
+        let due = replaceable && fetch_due(state.forecast_checked, 30);
+        drop(state);
+        if due && !crate::forecast::runs_locally() {
+            self.refresh_forecast();
+        }
     }
 
     fn refresh_forecast(&self) {
@@ -404,6 +423,7 @@ impl Delegate {
         if state.demo || state.forecast_loading {
             return;
         }
+        state.forecast_checked = Some(chrono::Utc::now());
         state.forecast_loading = true;
         state.forecast_error = None;
         state.forecast_generation += 1;
@@ -411,7 +431,7 @@ impl Delegate {
         drop(state);
         self.render();
         std::thread::spawn(move || {
-            let result = crate::forecast::regenerate();
+            let result = crate::forecast::refresh();
             dispatch2::DispatchQueue::main().exec_async(move || {
                 APP.with(|app| {
                     if let Some(app) = app.get() {
@@ -493,15 +513,7 @@ impl Delegate {
             return;
         }
         let root: Retained<NSView> = match state.page {
-            Page::Forecast => forecast_page::view(
-                self.mtm(),
-                self,
-                &state.config,
-                state.forecast.as_ref(),
-                state.forecast_loading,
-                state.forecast_error.as_deref(),
-                state.demo,
-            ),
+            Page::Forecast => forecast_page::view(self.mtm(), self, &state),
             Page::Settings => self.settings_view(&state).into_super(),
             Page::About => self.about_view(&state).into_super(),
             Page::Conditions => self.dashboard(&state).into_super(),

@@ -8,15 +8,24 @@ use std::process::{Command, Stdio};
 pub const DEVELOPMENT_KEY: &str = "6cefd36d8e12a4dead4cf06d4dbd09c0";
 pub const ATTRIBUTION: &str = "Real time data displayed on this page are from the Regional Coastal Monitoring Programme, made freely available under the terms of the Open Government Licence. Please note that these are real-time data and are not quality-controlled.";
 
-fn get(kind: &str, sensor: Option<&str>, history: bool) -> Result<Value, String> {
-    let key = std::env::var("FOMO_API_KEY").unwrap_or_else(|_| DEVELOPMENT_KEY.into());
-    // The live service accepts its current website domain for the published key.
-    // A personal key can specify its issued domain with FOMO_API_REFERER.
-    let referer = std::env::var("FOMO_API_REFERER")
-        .unwrap_or_else(|_| "https://coastalmonitoring.org/".into());
-    let url = format!("https://coastalmonitoring.org/observations/{kind}/latest.geojson");
-    // macOS supplies curl and its TLS stack. No embedded browser, async runtime,
-    // or bundled TLS library is needed. This runs only on background threads.
+// Who a request went to, for error messages.
+struct Service {
+    name: &'static str,
+    // Advice when the service refuses the request (HTTP 401/403).
+    rejection_hint: Option<&'static str>,
+}
+const COASTAL: Service = Service {
+    name: "Coastal Monitoring",
+    rejection_hint: Some("Check FOMO_API_KEY and FOMO_API_REFERER in README."),
+};
+const GITHUB: Service = Service {
+    name: "GitHub",
+    rejection_hint: None,
+};
+
+// macOS supplies curl and its TLS stack. No embedded browser, async runtime,
+// or bundled TLS library is needed. Requests run only on background threads.
+fn curl(max_bytes: u64) -> Command {
     let mut cmd = Command::new("/usr/bin/curl");
     cmd.args([
         "--disable",
@@ -30,31 +39,29 @@ fn get(kind: &str, sensor: Option<&str>, history: bool) -> Result<Value, String>
         "--max-time",
         "20",
         "--max-filesize",
-        "2097152",
-        "--get",
     ])
-    .arg("--header")
-    .arg(format!("Referer: {referer}"))
+    .arg(max_bytes.to_string())
     .args([
-        "--header",
-        "Accept: application/json",
         "--user-agent",
-        "Fomo/0.1 (personal macOS buoy viewer)",
+        concat!("Fomo/", env!("CARGO_PKG_VERSION"), " (macOS buoy viewer)"),
         // Append the status on its own line so failures can be explained.
         "--write-out",
         "\n%{http_code}",
-        // The key arrives on stdin, so it never appears in the process list.
-        "--config",
-        "-",
     ]);
-    if let Some(sensor) = sensor {
-        cmd.arg("--data-urlencode").arg(format!("sensor={sensor}"));
-    }
-    if history {
-        cmd.args(["--data-urlencode", "duration=12"]);
+    cmd
+}
+
+// Runs curl and returns the response body. `secret_config` is passed as a curl
+// config on stdin, so secrets never appear in the process list.
+fn run(
+    mut cmd: Command,
+    secret_config: Option<String>,
+    service: &Service,
+) -> Result<Vec<u8>, String> {
+    if secret_config.is_some() {
+        cmd.args(["--config", "-"]);
     }
     let mut child = cmd
-        .arg(url)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -62,21 +69,53 @@ fn get(kind: &str, sensor: Option<&str>, history: bool) -> Result<Value, String>
         .map_err(|e| format!("Could not connect: {e}"))?;
     if let Some(mut stdin) = child.stdin.take() {
         // Dropping stdin at the end of this block closes it, which ends curl's config.
-        let _ = writeln!(stdin, "data-urlencode = \"key={}\"", config_quote(&key));
+        let _ = stdin.write_all(secret_config.unwrap_or_default().as_bytes());
     }
     let result = child
         .wait_with_output()
         .map_err(|e| format!("Could not connect: {e}"))?;
     let (body, status) = split_status(&result.stdout);
     if !result.status.success() {
-        return Err(request_error(result.status.code(), status, body));
+        return Err(request_error(service, result.status.code(), status, body));
     }
-    let value: Value = serde_json::from_slice(body)
+    Ok(body.to_vec())
+}
+
+fn get(kind: &str, sensor: Option<&str>, history: bool) -> Result<Value, String> {
+    let key = std::env::var("FOMO_API_KEY").unwrap_or_else(|_| DEVELOPMENT_KEY.into());
+    // The live service accepts its current website domain for the published key.
+    // A personal key can specify its issued domain with FOMO_API_REFERER.
+    let referer = std::env::var("FOMO_API_REFERER")
+        .unwrap_or_else(|_| "https://coastalmonitoring.org/".into());
+    let mut cmd = curl(2 * 1024 * 1024);
+    cmd.arg("--get")
+        .arg("--header")
+        .arg(format!("Referer: {referer}"))
+        .args(["--header", "Accept: application/json"]);
+    if let Some(sensor) = sensor {
+        cmd.arg("--data-urlencode").arg(format!("sensor={sensor}"));
+    }
+    if history {
+        cmd.args(["--data-urlencode", "duration=12"]);
+    }
+    cmd.arg(format!(
+        "https://coastalmonitoring.org/observations/{kind}/latest.geojson"
+    ));
+    let key_config = format!("data-urlencode = \"key={}\"\n", config_quote(&key));
+    let body = run(cmd, Some(key_config), &COASTAL)?;
+    let value: Value = serde_json::from_slice(&body)
         .map_err(|_| "The buoy service returned an unreadable response")?;
     if !value["features"].is_array() {
         return Err("The buoy service returned an unexpected response".into());
     }
     Ok(value)
+}
+
+// Fetches a published file, such as the shared forecast.
+pub fn download(url: &str, max_bytes: u64) -> Result<Vec<u8>, String> {
+    let mut cmd = curl(max_bytes);
+    cmd.arg(url);
+    run(cmd, None, &GITHUB)
 }
 
 // Escapes a value for a double-quoted string in a curl config file.
@@ -102,37 +141,34 @@ fn split_status(stdout: &[u8]) -> (&[u8], u16) {
     }
 }
 
-fn request_error(exit_code: Option<i32>, status: u16, body: &[u8]) -> String {
+fn request_error(service: &Service, exit_code: Option<i32>, status: u16, body: &[u8]) -> String {
     const RETRY: &str = "Retrying automatically.";
-    // The service explains rejections in a short plain-text line; anything else
+    let name = service.name;
+    // Services explain rejections in a short plain-text line; anything else
     // (an HTML error page, say) is not worth showing.
     let explanation = std::str::from_utf8(body)
         .ok()
         .map(str::trim)
         .filter(|text| !text.is_empty() && text.len() <= 100)
         .filter(|text| !text.contains(['<', '\n', '{']));
-    let rejected = |default: &str| {
-        format!(
-            "{}. Check FOMO_API_KEY and FOMO_API_REFERER in README.",
-            explanation.unwrap_or(default)
-        )
+    let rejected = |default: &str| match service.rejection_hint {
+        Some(hint) => format!("{}. {hint}", explanation.unwrap_or(default)),
+        None => format!("{name} refused the request (HTTP {status})."),
     };
     match (exit_code, status) {
         (_, 401) => rejected("API key rejected"),
         (_, 403) => rejected("Referer rejected for this API key"),
-        (_, 429) => format!("Coastal Monitoring is limiting requests. {RETRY}"),
-        (_, 500..=599) => format!("Coastal Monitoring is unavailable (HTTP {status}). {RETRY}"),
-        (Some(22), _) => format!("Coastal Monitoring returned HTTP {status}. {RETRY}"),
+        (_, 429) => format!("{name} is limiting requests. {RETRY}"),
+        (_, 500..=599) => format!("{name} is unavailable (HTTP {status}). {RETRY}"),
+        (Some(22), _) => format!("{name} returned HTTP {status}. {RETRY}"),
         (Some(6), _) => format!("No internet connection: could not look up the server. {RETRY}"),
-        (Some(7), _) => format!("Could not connect to Coastal Monitoring. {RETRY}"),
-        (Some(28), _) => format!("Coastal Monitoring did not respond in time. {RETRY}"),
+        (Some(7), _) => format!("Could not connect to {name}. {RETRY}"),
+        (Some(28), _) => format!("{name} did not respond in time. {RETRY}"),
         (Some(35 | 51 | 53 | 54 | 58 | 59 | 60 | 64 | 66 | 77 | 80 | 82 | 83 | 90 | 91), _) => {
-            format!("Secure connection to Coastal Monitoring failed. {RETRY}")
+            format!("Secure connection to {name} failed. {RETRY}")
         }
-        (Some(63), _) => "The buoy service returned an oversized response.".into(),
-        (Some(code), _) => {
-            format!("Could not reach Coastal Monitoring (curl error {code}). {RETRY}")
-        }
+        (Some(63), _) => format!("{name} returned an oversized response."),
+        (Some(code), _) => format!("Could not reach {name} (curl error {code}). {RETRY}"),
         (None, _) => format!("The request was interrupted. {RETRY}"),
     }
 }
@@ -375,18 +411,33 @@ mod tests {
     #[test]
     fn request_errors_name_the_cause() {
         // Bodies as returned by the live service on 19 October 2026.
-        let key = request_error(Some(22), 401, b"Missing or unknown API key");
+        let key = request_error(&COASTAL, Some(22), 401, b"Missing or unknown API key");
         assert!(key.starts_with("Missing or unknown API key. Check FOMO_API_KEY"));
-        let referer = request_error(Some(22), 403, b"Referer does not match the key's domain");
+        let referer = request_error(
+            &COASTAL,
+            Some(22),
+            403,
+            b"Referer does not match the key's domain",
+        );
         assert!(referer.starts_with("Referer does not match the key's domain."));
-        let html = request_error(Some(22), 403, b"<html><body>Forbidden</body></html>");
+        let html = request_error(
+            &COASTAL,
+            Some(22),
+            403,
+            b"<html><body>Forbidden</body></html>",
+        );
         assert!(html.starts_with("Referer rejected for this API key."));
-        let outage = request_error(Some(22), 503, b"<html>Service Unavailable</html>");
+        let outage = request_error(&COASTAL, Some(22), 503, b"<html>Service Unavailable</html>");
         assert!(outage.contains("unavailable (HTTP 503)") && !outage.contains("html"));
-        assert!(request_error(Some(6), 0, b"").starts_with("No internet connection"));
-        assert!(request_error(Some(28), 0, b"").contains("did not respond in time"));
-        assert!(request_error(Some(60), 0, b"").starts_with("Secure connection"));
-        assert!(request_error(Some(99), 0, b"").contains("curl error 99"));
+        assert!(request_error(&COASTAL, Some(6), 0, b"").starts_with("No internet connection"));
+        assert!(request_error(&COASTAL, Some(28), 0, b"").contains("did not respond in time"));
+        assert!(request_error(&COASTAL, Some(60), 0, b"").starts_with("Secure connection"));
+        assert!(request_error(&COASTAL, Some(99), 0, b"").contains("curl error 99"));
+        // The forecast host gets no API-key advice.
+        let missing = request_error(&GITHUB, Some(22), 404, b"404: Not Found");
+        assert_eq!(missing, "GitHub returned HTTP 404. Retrying automatically.");
+        let refused = request_error(&GITHUB, Some(22), 403, b"Forbidden");
+        assert_eq!(refused, "GitHub refused the request (HTTP 403).");
     }
 
     #[test]
