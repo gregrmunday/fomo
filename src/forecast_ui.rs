@@ -288,7 +288,7 @@ pub fn view(
     let status = if loading {
         "Fetching model runs and buoy history · M3 GPU".into()
     } else if let Some(error) = error {
-        format!("Update failed: {error}")
+        error.to_string()
     } else if let Some(bundle) = bundle {
         format!(
             "Issued {} · {}{}",

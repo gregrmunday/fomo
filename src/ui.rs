@@ -44,6 +44,28 @@ struct State {
     forecast_generation: u64,
 }
 
+impl State {
+    // Reads the saved forecast only when the file has changed since it was loaded,
+    // so the regular observation refresh costs one stat call.
+    fn reload_forecast(&mut self) {
+        if self.demo || self.forecast_loading {
+            return;
+        }
+        let loaded = self.forecast.as_ref().and_then(|b| b.modified);
+        if loaded.is_some() && crate::forecast::modified() == loaded {
+            return;
+        }
+        match crate::forecast::load_local() {
+            Ok(Some(bundle)) => {
+                self.forecast = Some(bundle);
+                self.forecast_error = None;
+            }
+            Ok(None) => {}
+            Err(error) => self.forecast_error = Some(format!("Saved forecast unreadable: {error}")),
+        }
+    }
+}
+
 struct Ivars {
     state: RefCell<State>,
     status: OnceCell<Retained<NSStatusItem>>,
@@ -196,9 +218,7 @@ define_class!(
             state.forecast_page = true;
             state.settings = false;
             state.about = false;
-            if !state.demo && !state.forecast_loading {
-                if let Ok(bundle) = crate::forecast::load_local() { state.forecast = Some(bundle); }
-            }
+            state.reload_forecast();
             drop(state);
             self.render();
         }
@@ -240,27 +260,25 @@ impl Delegate {
             cache.wind_history_error = None;
             cache
         };
+        let mut state = State {
+            config,
+            snapshot,
+            generation: 0,
+            loading: false,
+            last_fetch: None,
+            settings: false,
+            about: false,
+            demo,
+            save_error: None,
+            forecast: None,
+            forecast_error: None,
+            forecast_loading: false,
+            forecast_page: false,
+            forecast_generation: 0,
+        };
+        state.reload_forecast();
         let this = Self::alloc(mtm).set_ivars(Ivars {
-            state: RefCell::new(State {
-                config,
-                snapshot,
-                generation: 0,
-                loading: false,
-                last_fetch: None,
-                settings: false,
-                about: false,
-                demo,
-                save_error: None,
-                forecast: if demo {
-                    None
-                } else {
-                    crate::forecast::load_local().ok()
-                },
-                forecast_error: None,
-                forecast_loading: false,
-                forecast_page: false,
-                forecast_generation: 0,
-            }),
+            state: RefCell::new(state),
             status: OnceCell::new(),
             popover: OnceCell::new(),
             controller: OnceCell::new(),
@@ -382,9 +400,7 @@ impl Delegate {
             result.wind_history = state.snapshot.wind_history.clone();
         }
         state.snapshot = result;
-        if let Ok(bundle) = crate::forecast::load_local() {
-            state.forecast = Some(bundle);
-        }
+        state.reload_forecast();
         state.loading = false;
         // A successful write shows storage has recovered, so clear any earlier failure.
         state.save_error = state.snapshot.save(state.config.spot).err();
@@ -415,7 +431,9 @@ impl Delegate {
                         state.forecast_loading = false;
                         match result {
                             Ok(bundle) => state.forecast = Some(bundle),
-                            Err(error) => state.forecast_error = Some(error),
+                            Err(error) => {
+                                state.forecast_error = Some(format!("Update failed: {error}"))
+                            }
                         }
                         drop(state);
                         app.render();
@@ -2293,7 +2311,7 @@ fn render_swell_previews(mtm: MainThreadMarker, dir: &str) {
             about: false,
             demo: false,
             save_error: None,
-            forecast: crate::forecast::load_local().ok(),
+            forecast: crate::forecast::load_local().ok().flatten(),
             forecast_error: None,
             forecast_loading: false,
             forecast_page: false,
@@ -2413,7 +2431,7 @@ fn render_previews(mtm: MainThreadMarker, dir: &str) {
             view.hover_at(NSPoint::new(0.0, 0.0));
             assert!(view.ivars().hovered.get().is_none());
         }
-        let forecast = crate::forecast::load_local().ok();
+        let forecast = crate::forecast::load_local().ok().flatten();
         let forecast_view = crate::forecast_ui::view(
             mtm,
             &delegate,

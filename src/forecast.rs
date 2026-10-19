@@ -2,7 +2,7 @@
 //! Direction is a magnetic FROM bearing, consistent with the CCO observations.
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
-use std::{collections::BTreeMap, fs, path::Path};
+use std::{collections::BTreeMap, fs, path::Path, time::SystemTime};
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct ForecastBundle {
@@ -18,6 +18,9 @@ pub struct ForecastBundle {
     pub forecasts: Vec<BuoyForecast>,
     #[serde(default)]
     pub swell_panel: Option<SwellPanel>,
+    // When the file was written, so callers can skip re-reading an unchanged forecast.
+    #[serde(skip)]
+    pub modified: Option<SystemTime>,
 }
 #[derive(Clone, Debug, Deserialize)]
 pub struct SwellPanel {
@@ -109,9 +112,10 @@ impl ForecastBundle {
         if metadata.len() > 4 * 1024 * 1024 {
             return Err("Forecast file too large".into());
         }
-        let bundle: Self = serde_json::from_slice(&fs::read(path).map_err(|e| e.to_string())?)
+        let mut bundle: Self = serde_json::from_slice(&fs::read(path).map_err(|e| e.to_string())?)
             .map_err(|e| format!("Unreadable forecast: {e}"))?;
         bundle.validate()?;
+        bundle.modified = metadata.modified().ok();
         Ok(bundle)
     }
     pub fn is_stale(&self) -> bool {
@@ -254,8 +258,16 @@ pub fn output_path() -> std::path::PathBuf {
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| project_dir().join("forecasts/fomo-v2.json"))
 }
-pub fn load_local() -> Result<ForecastBundle, String> {
-    ForecastBundle::load(&output_path())
+// None when no forecast has been generated yet.
+pub fn load_local() -> Result<Option<ForecastBundle>, String> {
+    let path = output_path();
+    if !path.exists() {
+        return Ok(None);
+    }
+    ForecastBundle::load(&path).map(Some)
+}
+pub fn modified() -> Option<SystemTime> {
+    fs::metadata(output_path()).and_then(|m| m.modified()).ok()
 }
 
 // The worker's final message, read from the end of its log. Decoding is lossy so that
@@ -302,7 +314,7 @@ pub fn regenerate() -> Result<ForecastBundle, String> {
     loop {
         if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
             if status.success() {
-                return load_local();
+                return load_local()?.ok_or_else(|| "The forecast worker wrote no file".into());
             }
             return Err(last_log_line(&log_path).unwrap_or_else(|| "Forecast worker failed".into()));
         }
