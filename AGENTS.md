@@ -43,6 +43,10 @@ cargo run -- --demo --render-preview <scratch dir>
 
 `cargo run -- --check-data` makes real API requests and prints parsed observations; use it to verify networking changes.
 
+For a refactor that should not change the UI, render previews from the old and new builds and compare the PNGs with `cmp`. Demo data is relative to the current time, so demo renders made a few seconds apart are byte-identical. Renders of real observations are not, because their positions shift with the clock; compare the underlying data instead.
+
+`--render-preview` writes `conditions-missing-*` with every current reading absent, which is the quickest check of the `—` invariant below.
+
 ## Invariants
 
 - A missing or invalid value displays as `—`, never `0`.
@@ -58,6 +62,18 @@ cargo run -- --demo --render-preview <scratch dir>
 - One commit per work-log item, with the item number in the subject (for example `#4: Clear save error after a successful cache write`).
 - Before starting an item, set its status to `in progress (<agent>)` and commit or tell the user, so two agents don't edit the same code at once.
 - Items 12 to 15 restructure `ui.rs`. Avoid starting other UI items in parallel with them.
+
+## Status and handoff (2026-10-19)
+
+All 18 review items are done on `improvements` (one commit each after the baseline). Tests went from 9 to 21; fmt, clippy `-D warnings`, tests and the release build all pass. `main` is unchanged, so `git diff main..improvements` shows the whole change.
+
+Still to check by hand, because they need a real session:
+
+- **#7** Sleep the Mac for longer than the refresh interval, then wake it. Readings should update within about 15 seconds.
+- **#11** With the panel open, try ⌘, and ⌘Q from the Forecast, Settings and Credits pages. On Credits, select text and press ⌘C.
+- **#13** Click through Forecast, Settings, Credits and Back. The Settings and Data & credits buttons should toggle back to conditions.
+
+`dist/Fomo.app` has not been rebuilt. Run `./scripts/build-app.sh` after quitting any running copy, because replacing a running signed binary can crash it. `dist/previews` was regenerated from the final tree.
 
 ## Work log
 
