@@ -72,8 +72,8 @@ Review findings from 2026-10-19, worked through in order. Status is `todo`, `in 
 - [x] **#7 Refresh on wake.** Only the repeating timer triggers refreshes. Refresh shortly after `NSWorkspaceDidWakeNotification`, and when the popover opens if the last fetch is older than the interval. Use wall-clock time (`Instant` stops during sleep on macOS). Status: done (wake path needs a manual check: sleep the Mac for longer than the refresh interval, wake, and readings should update within about 15 s)
 - [x] **#8 Network error detail.** `data::get` collapses DNS, timeout, TLS and HTTP failures into one message and matches `"key"` anywhere in the body. Classify by curl exit code and HTTP status. Status: done
 - [x] **#9 Forecast reload.** `Delegate::complete` re-reads and re-validates the forecast JSON on the main thread every refresh, and load errors are silently dropped. Reload only when the file changes and show load errors. Status: done
-- [ ] **#10 API key in process arguments.** The key is visible to `ps`. Pass it to curl through `--config -` on stdin. Status: in progress (Claude)
-- [ ] **#11 Shortcuts on every page.** ⌘Q and ⌘, are button key equivalents on the dashboard only. Add an app main menu (also gives ⌘C for selectable text, which LSUIElement apps otherwise lack). Status: todo
+- [x] **#10 API key in process arguments.** The key is visible to `ps`. Pass it to curl through `--config -` on stdin. Status: done
+- [ ] **#11 Shortcuts on every page.** ⌘Q and ⌘, are button key equivalents on the dashboard only. Add an app main menu (also gives ⌘C for selectable text, which LSUIElement apps otherwise lack). Status: in progress (Claude)
 
 ### Structure
 

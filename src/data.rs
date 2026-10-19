@@ -1,7 +1,8 @@
 use crate::model::*;
 use chrono::{NaiveDateTime, Utc};
 use serde_json::Value;
-use std::process::Command;
+use std::io::Write;
+use std::process::{Command, Stdio};
 
 // Published for development at https://coastalmonitoring.org/ccoresources/api/
 pub const DEVELOPMENT_KEY: &str = "6cefd36d8e12a4dead4cf06d4dbd09c0";
@@ -42,18 +43,29 @@ fn get(kind: &str, sensor: Option<&str>, history: bool) -> Result<Value, String>
         // Append the status on its own line so failures can be explained.
         "--write-out",
         "\n%{http_code}",
-    ])
-    .arg("--data-urlencode")
-    .arg(format!("key={key}"));
+        // The key arrives on stdin, so it never appears in the process list.
+        "--config",
+        "-",
+    ]);
     if let Some(sensor) = sensor {
         cmd.arg("--data-urlencode").arg(format!("sensor={sensor}"));
     }
     if history {
         cmd.args(["--data-urlencode", "duration=12"]);
     }
-    let result = cmd
+    let mut child = cmd
         .arg(url)
-        .output()
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Could not connect: {e}"))?;
+    if let Some(mut stdin) = child.stdin.take() {
+        // Dropping stdin at the end of this block closes it, which ends curl's config.
+        let _ = writeln!(stdin, "data-urlencode = \"key={}\"", config_quote(&key));
+    }
+    let result = child
+        .wait_with_output()
         .map_err(|e| format!("Could not connect: {e}"))?;
     let (body, status) = split_status(&result.stdout);
     if !result.status.success() {
@@ -65,6 +77,15 @@ fn get(kind: &str, sensor: Option<&str>, history: bool) -> Result<Value, String>
         return Err("The buoy service returned an unexpected response".into());
     }
     Ok(value)
+}
+
+// Escapes a value for a double-quoted string in a curl config file.
+fn config_quote(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
 }
 
 // Separates the response body from the status line added by --write-out.
@@ -332,6 +353,13 @@ mod tests {
         assert_eq!(history[2].speed, Some(9.37));
         assert_eq!(history[2].direction, Some(30.1));
         assert!(wind_history(&payload, "Looe Bay").is_err());
+    }
+
+    #[test]
+    fn config_values_are_quoted_for_curl() {
+        assert_eq!(config_quote("6cefd36d"), "6cefd36d");
+        assert_eq!(config_quote(r#"a"b\c"#), r#"a\"b\\c"#);
+        assert_eq!(config_quote("a\nb"), r"a\nb");
     }
 
     #[test]
