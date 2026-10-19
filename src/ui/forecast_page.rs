@@ -1,17 +1,9 @@
-use crate::{forecast::*, model::*};
-use chrono::Local;
-use objc2::rc::Retained;
-use objc2::runtime::{AnyObject, Sel};
-use objc2::{AnyThread, DefinedClass, MainThreadOnly, define_class, msg_send, sel};
-use objc2_app_kit::*;
-use objc2_foundation::{
-    MainThreadMarker, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString,
-};
-use std::cell::{Cell, OnceCell};
+use super::*;
+use crate::forecast::{BuoyForecast, ForecastPoint};
 
-const HEIGHT: f64 = 744.0;
-const LEFT: f64 = 40.0;
-const WIDTH: f64 = 306.0;
+// Horizontal extent of the forecast charts.
+const CHART_LEFT: f64 = 40.0;
+const CHART_WIDTH: f64 = 306.0;
 struct ForecastIvars {
     buoy: Option<BuoyForecast>,
     config: Config,
@@ -35,12 +27,12 @@ define_class!(
                 let config = &self.ivars().config;
                 let value = |p: &ForecastPoint, quantile: usize| channel_value(config, p, channel, quantile);
                 let high = scale_max(config, buoy, channel);
-                let pos = |i: usize, v: f64| NSPoint::new(LEFT+i as f64/(points.len()-1) as f64*WIDTH,
+                let pos = |i: usize, v: f64| NSPoint::new(CHART_LEFT+i as f64/(points.len()-1) as f64*CHART_WIDTH,
                     HEIGHT-top-height+v/high*height);
                 for grid in 0..=2 {
                     let line = NSBezierPath::new();
-                    line.moveToPoint(NSPoint::new(LEFT, HEIGHT-top-height+grid as f64/2.0*height));
-                    line.lineToPoint(NSPoint::new(LEFT+WIDTH, HEIGHT-top-height+grid as f64/2.0*height));
+                    line.moveToPoint(NSPoint::new(CHART_LEFT, HEIGHT-top-height+grid as f64/2.0*height));
+                    line.lineToPoint(NSPoint::new(CHART_LEFT+CHART_WIDTH, HEIGHT-top-height+grid as f64/2.0*height));
                     NSColor::separatorColor().setStroke(); line.setLineWidth(0.5); line.stroke();
                 }
                 let band = NSBezierPath::new();
@@ -48,32 +40,32 @@ define_class!(
                 for (i,p) in points.iter().enumerate().skip(1) { band.lineToPoint(pos(i,value(p,0))); }
                 for (i,p) in points.iter().enumerate().rev() { band.lineToPoint(pos(i,value(p,2))); }
                 band.closePath();
-                NSColor::colorWithCalibratedRed_green_blue_alpha(0.03,0.56,0.60,0.17).setFill(); band.fill();
+                wave_color().colorWithAlphaComponent(0.17).setFill(); band.fill();
                 let path = NSBezierPath::new();
                 for (i,p) in points.iter().enumerate() {
                     if i == 0 { path.moveToPoint(pos(i,value(p,1))); } else { path.lineToPoint(pos(i,value(p,1))); }
                 }
-                teal().setStroke(); path.setLineWidth(2.0); path.stroke();
+                wave_color().setStroke(); path.setLineWidth(2.0); path.stroke();
                 let index = self.ivars().selected.get().min(points.len()-1);
                 let p = pos(index, value(&points[index],1));
                 let guide = NSBezierPath::new();
                 guide.moveToPoint(NSPoint::new(p.x,HEIGHT-top-height));
                 guide.lineToPoint(NSPoint::new(p.x,HEIGHT-top));
                 NSColor::tertiaryLabelColor().setStroke(); guide.setLineWidth(0.8); guide.stroke();
-                teal().setFill(); NSBezierPath::bezierPathWithOvalInRect(NSRect::new(NSPoint::new(p.x-3.,p.y-3.),NSSize::new(6.,6.))).fill();
+                wave_color().setFill(); NSBezierPath::bezierPathWithOvalInRect(NSRect::new(NSPoint::new(p.x-3.,p.y-3.),NSSize::new(6.,6.))).fill();
             }
             for day in 0..7 {
                 let index = (day * 24).min(buoy.points.len()-1);
                 let direction = buoy.points[index].direction.from_deg;
                 let (dx,dy) = travel_vector(direction);
-                let x = LEFT+index as f64/(buoy.points.len()-1) as f64*WIDTH;
+                let x = CHART_LEFT+index as f64/(buoy.points.len()-1) as f64*CHART_WIDTH;
                 let y = HEIGHT-582.;
                 let tip = NSPoint::new(x+dx*10.,y+dy*10.);
                 let line = NSBezierPath::new();
                 line.moveToPoint(NSPoint::new(x-dx*8.,y-dy*8.)); line.lineToPoint(tip);
                 line.moveToPoint(NSPoint::new(tip.x-dx*5.-dy*3.,tip.y-dy*5.+dx*3.)); line.lineToPoint(tip);
                 line.lineToPoint(NSPoint::new(tip.x-dx*5.+dy*3.,tip.y-dy*5.-dx*3.));
-                teal().setStroke(); line.setLineWidth(1.8); line.stroke();
+                wave_color().setStroke(); line.setLineWidth(1.8); line.stroke();
             }
         }
         #[unsafe(method(mouseMoved:))]
@@ -91,7 +83,7 @@ impl ForecastCanvas {
             readout: OnceCell::new(),
         });
         unsafe {
-            msg_send![super(this), initWithFrame: NSRect::new(NSPoint::new(0.,0.),NSSize::new(380.,HEIGHT))]
+            msg_send![super(this), initWithFrame: NSRect::new(NSPoint::new(0.,0.),NSSize::new(WIDTH,HEIGHT))]
         }
     }
     fn select_at(&self, point: NSPoint) {
@@ -102,7 +94,8 @@ impl ForecastCanvas {
         if !(200.0..=620.0).contains(&from_top) {
             return;
         }
-        let index = (((point.x - LEFT) / WIDTH).clamp(0., 1.) * (buoy.points.len() - 1) as f64)
+        let index = (((point.x - CHART_LEFT) / CHART_WIDTH).clamp(0., 1.)
+            * (buoy.points.len() - 1) as f64)
             .round() as usize;
         self.ivars().selected.set(index);
         self.update_readout();
@@ -169,12 +162,6 @@ fn axis_text(value: f64) -> String {
         format!("{value:.0}")
     }
 }
-fn rect(x: f64, y: f64, w: f64, h: f64) -> NSRect {
-    NSRect::new(NSPoint::new(x, HEIGHT - y - h), NSSize::new(w, h))
-}
-fn teal() -> Retained<NSColor> {
-    NSColor::colorWithCalibratedRed_green_blue_alpha(0.03, 0.56, 0.60, 1.0)
-}
 #[allow(clippy::too_many_arguments)]
 fn text(
     parent: &NSView,
@@ -187,41 +174,15 @@ fn text(
     size: f64,
 ) -> Retained<NSTextField> {
     let label = NSTextField::wrappingLabelWithString(&NSString::from_str(value), mtm);
-    label.setFrame(rect(x, y, w, h));
+    label.setFrame(top_rect(x, y, w, h));
     label.setFont(Some(&NSFont::systemFontOfSize(size)));
     label.setTextColor(Some(&NSColor::labelColor()));
     parent.addSubview(&label);
     label
 }
-#[allow(clippy::too_many_arguments)]
-fn button(
-    parent: &NSView,
-    mtm: MainThreadMarker,
-    target: &AnyObject,
-    title: &str,
-    action: Sel,
-    x: f64,
-    y: f64,
-    w: f64,
-) -> Retained<NSButton> {
-    let b = unsafe {
-        NSButton::buttonWithTitle_target_action(
-            &NSString::from_str(title),
-            Some(target),
-            Some(action),
-            mtm,
-        )
-    };
-    b.setFrame(rect(x, y, w, 28.));
-    b.setBezelStyle(NSBezelStyle::Push);
-    b.setBordered(false);
-    b.setFont(Some(&NSFont::systemFontOfSize(11.)));
-    parent.addSubview(&b);
-    b
-}
 pub fn view(
     mtm: MainThreadMarker,
-    target: &AnyObject,
+    target: &Delegate,
     config: &Config,
     bundle: Option<&ForecastBundle>,
     loading: bool,
@@ -260,17 +221,16 @@ pub fn view(
     );
     button(
         &view,
-        mtm,
         target,
         "‹ Observations",
         sel!(back:),
         17.,
         85.,
         112.,
+        28.,
     );
     let refresh = button(
         &view,
-        mtm,
         target,
         if loading {
             "Updating on GPU…"
@@ -281,6 +241,7 @@ pub fn view(
         207.,
         85.,
         151.,
+        28.,
     );
     refresh.setEnabled(!loading && !demo);
     refresh.setKeyEquivalent(&NSString::from_str("r"));
@@ -329,7 +290,8 @@ pub fn view(
             text(&view, mtm, "0", 24., top + 115., 15., 16., 9.);
             for day in 0..7 {
                 let index = (day * 24).min(buoy.points.len() - 1);
-                let x = LEFT + index as f64 / (buoy.points.len() - 1) as f64 * WIDTH - 17.;
+                let x =
+                    CHART_LEFT + index as f64 / (buoy.points.len() - 1) as f64 * CHART_WIDTH - 17.;
                 text(
                     &view,
                     mtm,
@@ -358,7 +320,7 @@ pub fn view(
         );
         for day in 0..7 {
             let index = (day * 24).min(buoy.points.len() - 1);
-            let x = LEFT + index as f64 / (buoy.points.len() - 1) as f64 * WIDTH - 13.;
+            let x = CHART_LEFT + index as f64 / (buoy.points.len() - 1) as f64 * CHART_WIDTH - 13.;
             text(
                 &view,
                 mtm,

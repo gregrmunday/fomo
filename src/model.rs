@@ -197,6 +197,13 @@ impl Snapshot {
     pub fn save(&self, spot: Spot) -> Result<(), String> {
         save_json(&format!("cache-{}.json", spot.id()), self)
     }
+    // Forgets the wind source, so the next fetch chooses a station afresh.
+    pub fn clear_wind(&mut self) {
+        self.wind = None;
+        self.wind_history.clear();
+        self.wind_history_error = None;
+        self.wind_error = None;
+    }
 }
 
 pub fn age_minutes(time: DateTime<Utc>) -> i64 {

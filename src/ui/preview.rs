@@ -13,20 +13,8 @@ pub(super) fn render_swell_previews(mtm: MainThreadMarker, dir: &str) {
             &std::fs::read(snapshot_path).expect("saved live preview observations"),
         )
         .expect("parse live observations");
-        let state = State {
-            snapshot,
-            config,
-            generation: 0,
-            loading: false,
-            last_fetch: None,
-            page: Page::Conditions,
-            demo: false,
-            save_error: None,
-            forecast: crate::forecast::load_local().ok().flatten(),
-            forecast_error: None,
-            forecast_loading: false,
-            forecast_generation: 0,
-        };
+        let mut state = State::new(config, snapshot, false);
+        state.reload_forecast();
         for (theme, name) in unsafe {
             [
                 ("light", NSAppearanceNameAqua),
@@ -63,20 +51,7 @@ pub(super) fn render_previews(mtm: MainThreadMarker, dir: &str) {
     std::fs::create_dir_all(dir).expect("create preview directory");
     let delegate = Delegate::new(mtm);
     let config = Config::default();
-    let mut state = State {
-        snapshot: data::demo(config.spot),
-        config,
-        generation: 0,
-        loading: false,
-        last_fetch: None,
-        page: Page::Conditions,
-        demo: true,
-        save_error: None,
-        forecast: None,
-        forecast_error: None,
-        forecast_loading: false,
-        forecast_generation: 0,
-    };
+    let mut state = State::new(config.clone(), data::demo(config.spot), true);
     // Every current reading missing: each must render as "—", never as zero.
     let mut missing = state.snapshot.clone();
     if let Some(wave) = missing.waves.last_mut() {

@@ -225,7 +225,7 @@ impl Delegate {
             17.0,
             9.0,
             0.0,
-            &rgb(0.03, 0.56, 0.64),
+            &wave_color(),
         );
         label(
             &root,
@@ -237,7 +237,7 @@ impl Delegate {
             17.0,
             9.0,
             0.0,
-            &rgb(0.57, 0.32, 0.79),
+            &model_color(),
         );
         if values.len() < 2 && root.ivars().charts[0].predictions.is_empty() {
             label(

@@ -159,7 +159,7 @@ impl HistoryChart {
 
     pub(super) fn color(&self) -> Retained<NSColor> {
         match self.kind {
-            HistoryKind::Waves => rgb(0.03, 0.56, 0.64),
+            HistoryKind::Waves => wave_color(),
             HistoryKind::Wind => NSColor::systemBlueColor(),
         }
     }
@@ -197,7 +197,7 @@ impl HistoryChart {
                 band.lineToPoint(self.position(b.valid_at_utc, b.hs_m.p90));
                 band.lineToPoint(self.position(a.valid_at_utc, a.hs_m.p90));
                 band.closePath();
-                NSColor::colorWithCalibratedRed_green_blue_alpha(0.57, 0.32, 0.79, 0.12).setFill();
+                model_color().colorWithAlphaComponent(0.12).setFill();
                 band.fill();
                 let line = NSBezierPath::new();
                 let from = self.position(a.valid_at_utc, a.hs_m.p50);
@@ -211,7 +211,7 @@ impl HistoryChart {
                 } else {
                     line.lineToPoint(to);
                 }
-                rgb(0.57, 0.32, 0.79).setStroke();
+                model_color().setStroke();
                 line.setLineWidth(2.0);
                 line.stroke();
             }

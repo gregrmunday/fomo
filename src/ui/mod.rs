@@ -64,6 +64,23 @@ struct State {
 }
 
 impl State {
+    fn new(config: Config, snapshot: Snapshot, demo: bool) -> Self {
+        Self {
+            config,
+            snapshot,
+            generation: 0,
+            loading: false,
+            last_fetch: None,
+            page: Page::Conditions,
+            demo,
+            save_error: None,
+            forecast: None,
+            forecast_error: None,
+            forecast_loading: false,
+            forecast_generation: 0,
+        }
+    }
+
     // Reads the saved forecast only when the file has changed since it was loaded,
     // so the regular observation refresh costs one stat call.
     fn reload_forecast(&mut self) {
@@ -116,10 +133,7 @@ define_class!(
                     button.setAction(Some(sel!(toggle:)));
                 }
                 button.setFont(Some(&NSFont::monospacedDigitSystemFontOfSize_weight(11.0, 0.0)));
-                if let Some(image) = NSImage::imageWithSystemSymbolName_accessibilityDescription(
-                    &NSString::from_str("water.waves"), Some(&NSString::from_str("Fomo surf conditions"))) {
-                    image.setTemplate(true);
-                    image.setSize(NSSize::new(17.0, 16.0));
+                if let Some(image) = wave_icon() {
                     button.setImage(Some(&image));
                     button.setImagePosition(NSCellImagePosition::ImageLeft);
                 }
@@ -172,9 +186,7 @@ define_class!(
                     state.config.spot = if index == 0 { Spot::Perranporth } else { Spot::Porthleven };
                     state.snapshot = if state.demo { data::demo(state.config.spot) } else { Snapshot::load(state.config.spot) };
                     // A cached wind observation may have used a different source.
-                    state.snapshot.wind = None;
-                    state.snapshot.wind_history.clear();
-                    state.snapshot.wind_history_error = None;
+                    state.snapshot.clear_wind();
                     refetch = true;
                 }
                 2 => state.config.wave_unit = if index == 0 { WaveUnit::Metres } else { WaveUnit::Feet },
@@ -182,10 +194,7 @@ define_class!(
                 4 => state.config.refresh_minutes = [5,10,15,30][index.min(3)],
                 5 => {
                     state.config.wind_station = if index == 0 { None } else { Some(WIND_STATIONS[index.min(5)].into()) };
-                    state.snapshot.wind = None;
-                    state.snapshot.wind_history.clear();
-                    state.snapshot.wind_history_error = None;
-                    state.snapshot.wind_error = None;
+                    state.snapshot.clear_wind();
                     refetch = true;
                 }
                 6 => state.config.compact = index == 1,
@@ -250,25 +259,10 @@ impl Delegate {
         } else {
             let mut cache = Snapshot::load(config.spot);
             // Re-evaluate wind selection each launch; old source preferences are not trusted.
-            cache.wind = None;
-            cache.wind_history.clear();
-            cache.wind_history_error = None;
+            cache.clear_wind();
             cache
         };
-        let mut state = State {
-            config,
-            snapshot,
-            generation: 0,
-            loading: false,
-            last_fetch: None,
-            page: Page::Conditions,
-            demo,
-            save_error: None,
-            forecast: None,
-            forecast_error: None,
-            forecast_loading: false,
-            forecast_generation: 0,
-        };
+        let mut state = State::new(config, snapshot, demo);
         state.reload_forecast();
         let this = Self::alloc(mtm).set_ivars(Ivars {
             state: RefCell::new(state),

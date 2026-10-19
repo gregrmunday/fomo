@@ -10,6 +10,14 @@ pub(super) fn text_end(label: &NSTextField) -> f64 {
 pub(super) fn rgb(r: f64, g: f64, b: f64) -> Retained<NSColor> {
     NSColor::colorWithSRGBRed_green_blue_alpha(r, g, b, 1.0)
 }
+// Buoy observations and the forecast median.
+pub(super) fn wave_color() -> Retained<NSColor> {
+    rgb(0.03, 0.56, 0.64)
+}
+// Model predictions on the swell chart.
+pub(super) fn model_color() -> Retained<NSColor> {
+    rgb(0.57, 0.32, 0.79)
+}
 pub(super) fn ink() -> Retained<NSColor> {
     NSColor::labelColor()
 }
