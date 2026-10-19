@@ -39,6 +39,9 @@ fn get(kind: &str, sensor: Option<&str>, history: bool) -> Result<Value, String>
         "Accept: application/json",
         "--user-agent",
         "Fomo/0.1 (personal macOS buoy viewer)",
+        // Append the status on its own line so failures can be explained.
+        "--write-out",
+        "\n%{http_code}",
     ])
     .arg("--data-urlencode")
     .arg(format!("key={key}"));
@@ -52,22 +55,65 @@ fn get(kind: &str, sensor: Option<&str>, history: bool) -> Result<Value, String>
         .arg(url)
         .output()
         .map_err(|e| format!("Could not connect: {e}"))?;
+    let (body, status) = split_status(&result.stdout);
     if !result.status.success() {
-        let body = String::from_utf8_lossy(&result.stdout);
-        return Err(
-            if body.contains("key") || body.contains("Referer") || body.contains("Unauthorized") {
-                "API key or Referer rejected. Check the API settings in README.".into()
-            } else {
-                "Could not reach Coastal Monitoring. Retrying automatically.".into()
-            },
-        );
+        return Err(request_error(result.status.code(), status, body));
     }
-    let value: Value = serde_json::from_slice(&result.stdout)
+    let value: Value = serde_json::from_slice(body)
         .map_err(|_| "The buoy service returned an unreadable response")?;
     if !value["features"].is_array() {
         return Err("The buoy service returned an unexpected response".into());
     }
     Ok(value)
+}
+
+// Separates the response body from the status line added by --write-out.
+// The status is 0 when no HTTP response arrived.
+fn split_status(stdout: &[u8]) -> (&[u8], u16) {
+    match stdout.iter().rposition(|&b| b == b'\n') {
+        Some(i) => {
+            let status = std::str::from_utf8(&stdout[i + 1..])
+                .ok()
+                .and_then(|s| s.trim().parse().ok());
+            (&stdout[..i], status.unwrap_or(0))
+        }
+        None => (stdout, 0),
+    }
+}
+
+fn request_error(exit_code: Option<i32>, status: u16, body: &[u8]) -> String {
+    const RETRY: &str = "Retrying automatically.";
+    // The service explains rejections in a short plain-text line; anything else
+    // (an HTML error page, say) is not worth showing.
+    let explanation = std::str::from_utf8(body)
+        .ok()
+        .map(str::trim)
+        .filter(|text| !text.is_empty() && text.len() <= 100)
+        .filter(|text| !text.contains(['<', '\n', '{']));
+    let rejected = |default: &str| {
+        format!(
+            "{}. Check FOMO_API_KEY and FOMO_API_REFERER in README.",
+            explanation.unwrap_or(default)
+        )
+    };
+    match (exit_code, status) {
+        (_, 401) => rejected("API key rejected"),
+        (_, 403) => rejected("Referer rejected for this API key"),
+        (_, 429) => format!("Coastal Monitoring is limiting requests. {RETRY}"),
+        (_, 500..=599) => format!("Coastal Monitoring is unavailable (HTTP {status}). {RETRY}"),
+        (Some(22), _) => format!("Coastal Monitoring returned HTTP {status}. {RETRY}"),
+        (Some(6), _) => format!("No internet connection: could not look up the server. {RETRY}"),
+        (Some(7), _) => format!("Could not connect to Coastal Monitoring. {RETRY}"),
+        (Some(28), _) => format!("Coastal Monitoring did not respond in time. {RETRY}"),
+        (Some(35 | 51 | 53 | 54 | 58 | 59 | 60 | 64 | 66 | 77 | 80 | 82 | 83 | 90 | 91), _) => {
+            format!("Secure connection to Coastal Monitoring failed. {RETRY}")
+        }
+        (Some(63), _) => "The buoy service returned an oversized response.".into(),
+        (Some(code), _) => {
+            format!("Could not reach Coastal Monitoring (curl error {code}). {RETRY}")
+        }
+        (None, _) => format!("The request was interrupted. {RETRY}"),
+    }
 }
 
 fn number(p: &Value, key: &str, min: f64, max: f64) -> Option<f64> {
@@ -286,6 +332,33 @@ mod tests {
         assert_eq!(history[2].speed, Some(9.37));
         assert_eq!(history[2].direction, Some(30.1));
         assert!(wind_history(&payload, "Looe Bay").is_err());
+    }
+
+    #[test]
+    fn status_line_is_split_from_the_body() {
+        assert_eq!(
+            split_status(b"{\"features\":[]}\n200"),
+            (&b"{\"features\":[]}"[..], 200)
+        );
+        assert_eq!(split_status(b"\n000"), (&b""[..], 0));
+        assert_eq!(split_status(b""), (&b""[..], 0));
+    }
+
+    #[test]
+    fn request_errors_name_the_cause() {
+        // Bodies as returned by the live service on 19 October 2026.
+        let key = request_error(Some(22), 401, b"Missing or unknown API key");
+        assert!(key.starts_with("Missing or unknown API key. Check FOMO_API_KEY"));
+        let referer = request_error(Some(22), 403, b"Referer does not match the key's domain");
+        assert!(referer.starts_with("Referer does not match the key's domain."));
+        let html = request_error(Some(22), 403, b"<html><body>Forbidden</body></html>");
+        assert!(html.starts_with("Referer rejected for this API key."));
+        let outage = request_error(Some(22), 503, b"<html>Service Unavailable</html>");
+        assert!(outage.contains("unavailable (HTTP 503)") && !outage.contains("html"));
+        assert!(request_error(Some(6), 0, b"").starts_with("No internet connection"));
+        assert!(request_error(Some(28), 0, b"").contains("did not respond in time"));
+        assert!(request_error(Some(60), 0, b"").starts_with("Secure connection"));
+        assert!(request_error(Some(99), 0, b"").contains("curl error 99"));
     }
 
     #[test]
