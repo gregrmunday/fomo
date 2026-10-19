@@ -104,7 +104,7 @@ Still open for the user: the app ships Coastal Monitoring's published developmen
 | D1 | App downloads the published forecast when no local worker exists; auto-refresh after `refresh_after_utc`; Credits show forecast data attribution | done |
 | D2 | App release prep: `--version`, version 0.2.0, bundle id, LICENSE, README install section | done |
 | D3 | `fomo-forecast` repo: inference snapshot, requirements, sync script, scheduled workflow; tested in a clean local venv | done (local repo at `~/Documents/fomo-forecast`, committed, not pushed) |
-| D4 | `homebrew-tap` repo: `Formula/fomo.rb`; tested with a local tarball | in progress (Claude) |
+| D4 | `homebrew-tap` repo: `Formula/fomo.rb`; tested with a local tarball | written at `~/Documents/homebrew-tap` (not pushed); style and audit clean; its install steps verified by hand. A real `brew install` here is blocked: Homebrew requires Command Line Tools matching macOS 27, and this Mac has 26.6 |
 | D5 | Publish, after the user's go-ahead: create repos, push, tag v0.2.0, deploy key, first workflow run, install from GitHub | todo |
 
 ## Work log
